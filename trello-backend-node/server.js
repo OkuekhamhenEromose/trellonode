@@ -78,7 +78,7 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/test', (req, res) => {
   res.json({ 
-    message: 'Trello Backend API is working! Ì∫Ä',
+    message: 'Trello Backend API is working! ÔøΩÔøΩÔøΩ',
     endpoints: {
       health: 'GET /api/health',
       test: 'GET /api/test',
@@ -138,22 +138,22 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log('\n' + '='.repeat(50));
-  console.log('Ì∫Ä TRELLO BACKEND STARTED SUCCESSFULLY');
+  console.log('ÔøΩÔøΩÔøΩ TRELLO BACKEND STARTED SUCCESSFULLY');
   console.log('='.repeat(50));
-  console.log(`Ì≥° Server running on port ${PORT}`);
-  console.log(`Ìºê Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
-  console.log(`Ì∑ÑÔ∏è  MongoDB: ${mongoose.connection.readyState === 1 ? '‚úÖ Connected' : '‚ùå Disconnected'}`);
-  console.log(`Ì≥ä Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`ÔøΩÔøΩÔøΩ Server running on port ${PORT}`);
+  console.log(`ÔøΩÔøΩÔøΩ Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+  console.log(`ÔøΩÔøΩÔøΩÔ∏è  MongoDB: ${mongoose.connection.readyState === 1 ? '‚úÖ Connected' : '‚ùå Disconnected'}`);
+  console.log(`ÔøΩÔøΩÔøΩ Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('');
-  console.log('Ì¥ó API Endpoints:');
-  console.log(`   Ìø• Health: http://localhost:${PORT}/api/health`);
-  console.log(`   Ì∑™ Test: http://localhost:${PORT}/api/test`);
-  console.log(`   Ì¥ê Auth: http://localhost:${PORT}/api/auth/login`);
-  console.log(`   Ì≥ã Boards: http://localhost:${PORT}/api/boards`);
+  console.log('ÔøΩÔøΩÔøΩ API Endpoints:');
+  console.log(`   ÔøΩÔøΩÔøΩ Health: http://localhost:${PORT}/api/health`);
+  console.log(`   ÔøΩÔøΩÔøΩ Test: http://localhost:${PORT}/api/test`);
+  console.log(`   ÔøΩÔøΩÔøΩ Auth: http://localhost:${PORT}/api/auth/login`);
+  console.log(`   ÔøΩÔøΩÔøΩ Boards: http://localhost:${PORT}/api/boards`);
   console.log('');
-  console.log('Ì≤° Use Ctrl+C to stop the server');
+  console.log('ÔøΩÔøΩÔøΩ Use Ctrl+C to stop the server');
   console.log('='.repeat(50) + '\n');
 });
