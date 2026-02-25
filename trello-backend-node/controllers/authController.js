@@ -10,8 +10,8 @@ const { validate } = require('../validators/authValidators');
 const generateToken = (userId) => {
   return jwt.sign(
     { userId },
-    process.env.JWT_SECRET || 'your-secret-key',
-    { expiresIn: '1d' }
+    process.env.JWT_SECRET, // This reads from your .env file
+    { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
   );
 };
 
@@ -59,7 +59,7 @@ exports.startRegistration = async (req, res) => {
   }
 };
 
-// Verify Email
+// Verify Email - ONLY mark as verified, DON'T create user yet
 exports.verifyEmail = async (req, res) => {
   try {
     const { email, verificationCode, token } = req.body;
@@ -87,12 +87,14 @@ exports.verifyEmail = async (req, res) => {
     tempReg.isVerified = true;
     await tempReg.save();
     
+    // Return success but NO user created yet
     res.status(200).json({
       message: 'Email verified successfully',
       email,
-      token: tempReg.token,
-      verified: true
+      verified: true,
+      token: tempReg.token // Return the same token for setup
     });
+    
   } catch (error) {
     console.error('Verify email error:', error);
     res.status(500).json({ error: 'Email verification failed' });
