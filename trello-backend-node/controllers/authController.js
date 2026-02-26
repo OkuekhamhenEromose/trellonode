@@ -106,24 +106,38 @@ exports.completeRegistration = async (req, res) => {
   try {
     const { email, token, fullname, username, password, password2 } = req.body;
     
+    console.log("📝 Complete registration request - FULL BODY:", req.body);
+    console.log("📝 Email:", email);
+    console.log("📝 Token:", token ? token.substring(0,8) + '...' : 'missing');
+    console.log("📝 Fullname:", fullname);
+    console.log("📝 Username:", username);
+    console.log("📝 Password length:", password?.length);
+    console.log("📝 Password2 length:", password2?.length);
+
     // Validate passwords match
     if (password !== password2) {
+      console.log("❌ Passwords do not match");
       return res.status(400).json({ error: 'Passwords do not match.' });
     }
     
-    // Check if email already registered
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'This email is already registered.' });
-    }
-    
+    // // Check if email already registered
+    // const existingUser = await User.findOne({ email });
+    // if (existingUser) {
+    //   console.log("❌ Email already registered:", email);
+    //   return res.status(400).json({ error: 'This email is already registered.' });
+    // }
+
     // Check if username already exists
-    const existingUsername = await User.findOne({ username });
-    if (existingUsername) {
-      return res.status(400).json({ error: 'This username is already taken.' });
-    }
+    // const existingUsername = await User.findOne({ username });
+    // if (existingUsername) {
+    //   console.log("❌ Username already taken:", username);
+    //   return res.status(400).json({ error: 'This username is already taken.' });
+    // }
     
-    // Verify temporary registration
+    // // Verify temporary registration
+    // console.log("🔍 Looking for temp registration:", { email, token });
+    
+    // Check for valid temp registration FIRST (before user check)
     const tempReg = await TemporaryRegistration.findOne({
       email,
       token,
@@ -132,7 +146,27 @@ exports.completeRegistration = async (req, res) => {
     });
     
     if (!tempReg) {
+      console.log("❌ Invalid or expired verification token");
       return res.status(400).json({ error: 'Invalid or expired verification token.' });
+    }
+
+    console.log("✅ Temp registration found and verified");
+
+    // Check if email already registered
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      // If temp reg still exists, this is an orphaned user from a previous crash
+      // Clean it up and allow re-registration
+      console.log("🔄 Orphaned user detected — cleaning up and retrying:", email);
+      await User.deleteOne({ _id: existingUser._id });
+      await EmailVerificationToken.deleteMany({ user: existingUser._id });
+    }
+
+    // Check if username already exists
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      console.log("❌ Username already taken:", username);
+      return res.status(400).json({ error: 'This username is already taken.' });
     }
     
     // Create user
@@ -143,6 +177,8 @@ exports.completeRegistration = async (req, res) => {
       profile: { fullname },
       isActive: true
     });
+    
+    console.log("✅ User created successfully:", user._id)
     
     // Create email verification token
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
@@ -155,8 +191,12 @@ exports.completeRegistration = async (req, res) => {
     // Delete temporary registration
     await TemporaryRegistration.findByIdAndDelete(tempReg._id);
     
-    // Send welcome email
-    await sendWelcomeEmail(email, fullname);
+    // Send welcome email (don't fail if this errors)
+    try {
+      await sendWelcomeEmail(email, fullname);
+    } catch (emailError) {
+      console.error('❌ Welcome email failed:', emailError);
+    }
     
     // Generate tokens
     const accessToken = generateToken(user._id);
@@ -172,7 +212,7 @@ exports.completeRegistration = async (req, res) => {
       token: accessToken
     });
   } catch (error) {
-    console.error('Complete registration error:', error);
+    console.error('❌ Complete registration error:', error);
     res.status(500).json({ error: 'Registration completion failed' });
   }
 };

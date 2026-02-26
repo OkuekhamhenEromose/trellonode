@@ -1,19 +1,25 @@
 const nodemailer = require('nodemailer');
 
-// Create transporter
+// Create transporter for port 465 (SSL)
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: false, // true for 465, false for other ports
+  port: 465, // Explicitly set to 465
+  secure: true, // true for 465
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD,
   },
+  // Add timeout to prevent hanging
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
 
 // Send verification email
 exports.sendVerificationEmail = async (email, verificationCode, token) => {
   try {
+    console.log(`📧 Attempting to send verification email to ${email} using port 465...`);
+    
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to: email,
@@ -27,10 +33,12 @@ exports.sendVerificationEmail = async (email, verificationCode, token) => {
       `,
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ Verification email sent to ${email}`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Verification email sent to ${email} (Message ID: ${info.messageId})`);
+    return info;
   } catch (error) {
     console.error('❌ Error sending verification email:', error);
+    throw error;
   }
 };
 
@@ -49,8 +57,8 @@ exports.sendWelcomeEmail = async (email, fullname) => {
       `,
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ Welcome email sent to ${email}`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Welcome email sent to ${email} (Message ID: ${info.messageId})`);
   } catch (error) {
     console.error('❌ Error sending welcome email:', error);
   }
