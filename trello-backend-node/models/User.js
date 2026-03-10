@@ -12,10 +12,16 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
+    required: true,
     minlength: 8,
     select: false
   },
   googleId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  username: {
     type: String,
     unique: true,
     sparse: true
@@ -47,14 +53,35 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
+// FIXED: Use callback pattern instead of async/await
+userSchema.pre('save', function(next) {
+  const user = this;
+  
+  // Only hash if password is modified or new
+  if (!user.isModified('password')) {
+    return next();
+  }
+  
+  // Generate salt and hash using callbacks
+  bcrypt.genSalt(12, function(err, salt) {
+    if (err) return next(err);
+    
+    bcrypt.hash(user.password, salt, function(err, hash) {
+      if (err) return next(err);
+      
+      user.password = hash;
+      next();
+    });
+  });
 });
 
+// Compare password method - this can stay async
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  try {
+    return await bcrypt.compare(candidatePassword, this.password);
+  } catch (error) {
+    throw error;
+  }
 };
 
 userSchema.methods.isLocked = function() {
@@ -78,4 +105,5 @@ userSchema.methods.incLoginAttempts = function() {
   return this.updateOne(updates);
 };
 
-module.exports = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema);
+module.exports = User;

@@ -110,25 +110,38 @@ app.get('/api/test', (req, res) => {
 });
 console.log('🟢 16. Test route defined');
 
-// Try to load auth routes if they exist
+// // Load auth routes
+// console.log('🟢 17. Loading auth routes...');
+// try {
+//   const authRoutes = require('./routes/auth');
+//   console.log('✅ Auth routes required successfully');
+//   app.use('/api/auth', authRoutes);
+//   console.log('✅ Auth routes mounted at /api/auth');
+// } catch (err) {
+//   console.log('⚠️ Failed to load auth routes:', err.message);
+//   console.error(err.stack);
+// }
+
+// Load auth routes
 console.log('🟢 17. Loading auth routes...');
+let authRoutes;
 try {
-  const authRoutes = require('./routes/auth');
-  app.use('/api/auth', authRoutes);
-  console.log('✅ Auth routes loaded');
+  authRoutes = require('./routes/auth');
+  console.log('✅ Auth routes loaded from file');
 } catch (err) {
-  console.log('⚠️ Auth routes not found, using basic routes');
-  console.error('Error details:', err.message);
-  app.post('/api/auth/register', (req, res) => {
-    res.json({ message: 'Registration endpoint - add proper implementation' });
-  });
-  
-  app.post('/api/auth/login', (req, res) => {
-    res.json({ message: 'Login endpoint - add proper implementation' });
-  });
+  console.log('❌ Error loading auth routes:', err.message);
+  process.exit(1);
 }
 
-// Try to load board routes if they exist
+if (authRoutes) {
+  app.use('/api/auth', authRoutes);
+  console.log('✅ Auth routes mounted at /api/auth');
+} else {
+  console.log('❌ Auth routes is undefined');
+  process.exit(1);
+}
+
+// Load board routes
 console.log('🟢 18. Loading board routes...');
 try {
   const boardRoutes = require('./routes/boards');

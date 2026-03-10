@@ -1,5 +1,5 @@
 const { body, validationResult } = require('express-validator');
-const { User } = require('../models/User');
+const User = require('../models/User');
 
 // Common validation rules
 exports.validateEmail = body('email')
@@ -66,7 +66,7 @@ exports.validateRegistration = [
     .withMessage('Full name must be between 2 and 100 characters')
 ];
 
-// Login validation
+// Login validation - ADD THIS
 exports.validateLogin = [
   body('email')
     .optional()
@@ -91,7 +91,16 @@ exports.validateLogin = [
   })
 ];
 
-// Board validation
+// Validation result handler - ADD THIS
+exports.validate = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  next();
+};
+
+// Board validation (keep your existing board validations if needed)
 exports.validateBoard = [
   body('title')
     .notEmpty()
@@ -254,12 +263,3 @@ exports.validateReorderCards = [
     .isInt({ min: 0 })
     .withMessage('Position must be a positive integer')
 ];
-
-// Helper function to check validation results
-exports.validate = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-  next();
-};

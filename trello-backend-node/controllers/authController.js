@@ -6,7 +6,15 @@ const TemporaryRegistration = require('../models/TemporaryRegistration');
 const EmailVerificationToken = require('../models/EmailVerificationToken');
 const { v4: uuidv4 } = require('uuid');
 const { sendVerificationEmail } = require('../utils/email');
+const jwt = require('jsonwebtoken');
 
+const generateToken = (userId) => {
+  return jwt.sign(
+    { userId },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
+  );
+};
 // ==================== LOGIN FLOW CONTROLLERS ====================
 
 exports.loginEmail = async (req, res) => {
@@ -200,13 +208,44 @@ exports.startRegistration = async (req, res) => {
 };
 
 exports.verifyEmail = async (req, res) => {
+  console.log('🔍 VERIFY EMAIL CALLED');
+  console.log('Request body:', req.body);
+  
   try {
-    const { email, verificationCode, token } = req.body;
+    const { email, token } = req.body;
     
-    // ... your existing verification code
+    if (!email || !token) {
+      return res.status(400).json({ error: 'Email and token are required' });
+    }
+    
+    // Find temporary registration
+    const tempReg = await TemporaryRegistration.findOne({
+      email,
+      token,
+      expiresAt: { $gt: new Date() },
+      isVerified: false
+    });
+    
+    if (!tempReg) {
+      return res.status(400).json({ error: 'Invalid or expired verification token' });
+    }
+    
+    // Mark as verified
+    tempReg.isVerified = true;
+    await tempReg.save();
+    
+    console.log('✅ Email verified successfully for:', email);
+    
+    res.json({
+      message: 'Email verified successfully',
+      email,
+      verified: true,
+      token: tempReg.token
+    });
+    
   } catch (error) {
-    console.error('Verify email error:', error);
-    res.status(500).json({ error: 'Email verification failed' });
+    console.error('❌ Verify email error:', error);
+    res.status(500).json({ error: 'Verification failed' });
   }
 };
 
@@ -214,10 +253,138 @@ exports.completeRegistration = async (req, res) => {
   try {
     const { email, token, fullname, username, password, password2 } = req.body;
     
-    // ... your existing completion code
+    console.log("📝 COMPLETE REGISTRATION CALLED");
+    console.log("Email:", email);
+    console.log("Username:", username);
+    console.log("Fullname:", fullname);
+    console.log("Password length:", password?.length);
+    console.log("Token:", token);
+    
+    // Check validation
+    if (!email || !token || !fullname || !username || !password || !password2) {
+      console.log("❌ Missing required fields");
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        errors: [
+          { msg: 'All fields are required' }
+        ]
+      });
+    }
+    
+    if (password !== password2) {
+      console.log("❌ Passwords do not match");
+      return res.status(400).json({ 
+        error: 'Password validation failed',
+        errors: [
+          { msg: 'Passwords do not match' }
+        ]
+      });
+    }
+    
+    // Check if user already exists
+    console.log("🔍 Checking if user exists...");
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      console.log("❌ Email already registered:", email);
+      return res.status(400).json({ 
+        error: 'Email already registered',
+        errors: [
+          { msg: 'This email is already registered' }
+        ]
+      });
+    }
+    
+    // Check username
+    console.log("🔍 Checking if username exists...");
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      console.log("❌ Username already taken:", username);
+      return res.status(400).json({ 
+        error: 'Username taken',
+        errors: [
+          { msg: 'This username is already taken' }
+        ]
+      });
+    }
+    
+    // Verify token
+    console.log("🔍 Verifying token...");
+    const tempReg = await TemporaryRegistration.findOne({
+      email,
+      token,
+      expiresAt: { $gt: new Date() },
+      isVerified: true
+    });
+    
+    if (!tempReg) {
+      console.log("❌ Invalid or expired verification token");
+      return res.status(400).json({ 
+        error: 'Invalid token',
+        errors: [
+          { msg: 'Invalid or expired verification token' }
+        ]
+      });
+    }
+    
+    console.log("✅ Token verified, creating user...");
+    
+    // Create user
+    const user = await User.create({
+      username,
+      email,
+      password,
+      profile: { fullname },
+      isActive: true
+    });
+    
+    console.log("✅ User created:", user._id);
+    
+    // Delete temp registration
+    await TemporaryRegistration.findByIdAndDelete(tempReg._id);
+    
+    // Generate token
+    const accessToken = generateToken(user._id);
+    
+    console.log("✅ Registration complete, sending response");
+    
+    res.status(201).json({
+      message: 'Registration completed successfully',
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        profile: user.profile
+      },
+      token: accessToken
+    });
+    
   } catch (error) {
-    console.error('Complete registration error:', error);
-    res.status(500).json({ error: 'Registration completion failed' });
+    console.error('❌ COMPLETE REGISTRATION ERROR:');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    
+    // Check if it's a Mongoose validation error
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        errors: Object.values(error.errors).map(e => ({ msg: e.message }))
+      });
+    }
+    
+    // Check if it's a duplicate key error
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({ 
+        error: 'Duplicate field',
+        errors: [{ msg: `${field} already exists` }]
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Registration failed',
+      message: error.message 
+    });
   }
 };
 
@@ -297,3 +464,4 @@ exports.checkEmail = async (req, res) => {
     res.status(500).json({ error: 'Failed to check email' });
   }
 };
+console.log('✅ authController loaded with functions:', Object.keys(module.exports));

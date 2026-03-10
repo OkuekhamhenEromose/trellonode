@@ -21,31 +21,16 @@ const validatePassword = body('password')
   .matches(/^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/)
   .withMessage('Password must be at least 8 characters and contain at least one letter, one number, and one special character');
 
-const validateLoginEmail = [
-  validateEmail,
-  handleValidationErrors
-];
-
-const validateLoginPassword = [
-  validateEmail,
-  validatePassword,
-  handleValidationErrors
-];
-
+// Export individual validation chains
+const validateLoginEmail = [validateEmail, handleValidationErrors];
+const validateLoginPassword = [validateEmail, validatePassword, handleValidationErrors];
 const validateLoginToken = [
   validateEmail,
-  body('token')
-    .isLength({ min: 6, max: 6 })
-    .isNumeric()
-    .withMessage('Token must be a 6-digit number'),
+  body('token').isLength({ min: 6, max: 6 }).isNumeric().withMessage('Token must be a 6-digit number'),
   handleValidationErrors
 ];
-
 const validatePasswordReset = [
-  body('token')
-    .isLength({ min: 64, max: 64 })
-    .isHexadecimal()
-    .withMessage('Invalid reset token'),
+  body('token').isLength({ min: 64, max: 64 }).isHexadecimal().withMessage('Invalid reset token'),
   validatePassword,
   handleValidationErrors
 ];
