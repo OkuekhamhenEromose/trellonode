@@ -2,6 +2,10 @@ const authService = require('../services/authService');
 const googleService = require('../services/googleService');
 const tokenService = require('../services/tokenService');
 const User = require('../models/User');
+const TemporaryRegistration = require('../models/TemporaryRegistration');
+const EmailVerificationToken = require('../models/EmailVerificationToken');
+const { v4: uuidv4 } = require('uuid');
+const { sendVerificationEmail } = require('../utils/email');
 
 // ==================== LOGIN FLOW CONTROLLERS ====================
 
