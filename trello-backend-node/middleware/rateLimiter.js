@@ -1,16 +1,14 @@
 const rateLimit = require('express-rate-limit');
-const MongoStore = require('rate-limit-mongo');
 
+// Simple in-memory rate limiter (works for development)
 const createLimiter = (windowMs, max, message) => rateLimit({
-  store: new MongoStore({
-    uri: process.env.MONGODB_URI,
-    collectionName: 'rateLimits'
-  }),
   windowMs,
   max,
   message: { error: message },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // Skip failed requests to avoid counting errors
+  skipSuccessfulRequests: true
 });
 
 const authLimiter = createLimiter(
