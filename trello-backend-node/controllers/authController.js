@@ -143,19 +143,54 @@ exports.resetPassword = async (req, res) => {
 };
 
 // ==================== EXISTING CONTROLLERS ====================
-
 exports.startRegistration = async (req, res) => {
+  console.log('🔥 START REGISTRATION CALLED');
+  
   try {
     const { email } = req.body;
+    console.log('Email:', email);
     
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    // Check if user already exists
     const existingUser = await User.findOne({ email, isActive: true });
     if (existingUser) {
       return res.status(400).json({ error: 'This email is already registered.' });
     }
     
-    // ... rest of your existing code
+    // Delete any existing temporary registrations
+    await TemporaryRegistration.deleteMany({ email });
+    
+    // Generate verification code and token
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+    
+    // Create temporary registration
+    const tempReg = await TemporaryRegistration.create({
+      email,
+      verificationCode,
+      token,
+      expiresAt,
+      isVerified: false
+    });
+    
+    // Send verification email
+    await sendVerificationEmail(email, verificationCode, token);
+    
+    console.log('✅ Verification email sent to:', email);
+    
+    res.status(200).json({
+      message: 'Verification email sent',
+      email,
+      token: tempReg.token,
+      expiresAt
+    });
+    
   } catch (error) {
-    console.error('Start registration error:', error);
+    console.error('❌ Error:', error);
     res.status(500).json({ error: 'Registration failed' });
   }
 };

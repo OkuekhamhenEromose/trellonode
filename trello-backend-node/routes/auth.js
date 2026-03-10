@@ -56,9 +56,19 @@ router.post('/refresh-token',
 // ==================== EXISTING REGISTRATION FLOW ====================
 
 router.post('/register/start',
-  authLimiter,
+  // authLimiter,
   authController.startRegistration
 );
+router.get('/test-ping', (req, res) => {
+  console.log('🏓 Test ping called');
+  res.json({ message: 'pong' });
+});
+
+router.post('/test-echo', (req, res) => {
+  console.log('📢 Test echo called');
+  console.log('Body:', req.body);
+  res.json({ received: req.body });
+});
 
 router.post('/register/verify',
   authLimiter,
