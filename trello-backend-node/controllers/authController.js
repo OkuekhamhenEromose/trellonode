@@ -1,20 +1,19 @@
-const authService = require('../services/authService');
-const googleService = require('../services/googleService');
-const tokenService = require('../services/tokenService');
-const User = require('../models/User');
-const TemporaryRegistration = require('../models/TemporaryRegistration');
-const EmailVerificationToken = require('../models/EmailVerificationToken');
-const { v4: uuidv4 } = require('uuid');
-const { sendVerificationEmail } = require('../utils/email');
-const jwt = require('jsonwebtoken');
-const RefreshToken = require('../models/RefreshToken');
+const authService = require("../services/authService");
+const googleService = require("../services/googleService");
+const tokenService = require("../services/tokenService");
+
+const User = require("../models/User");
+const TemporaryRegistration = require("../models/TemporaryRegistration");
+const EmailVerificationToken = require("../models/EmailVerificationToken");
+const { v4: uuidv4 } = require("uuid");
+const { sendVerificationEmail } = require("../utils/email");
+const jwt = require("jsonwebtoken");
+const RefreshToken = require("../models/RefreshToken");
 
 const generateToken = (userId) => {
-  return jwt.sign(
-    { userId },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '1d' }
-  );
+  return jwt.sign({ userId }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || "1d",
+  });
 };
 // ==================== LOGIN FLOW CONTROLLERS ====================
 
@@ -22,11 +21,11 @@ exports.loginEmail = async (req, res) => {
   try {
     const { email } = req.body;
     await authService.validateEmail(email);
-    
+
     // Always return same response for security
-    res.json({ nextStep: 'password' });
+    res.json({ nextStep: "password" });
   } catch (error) {
-    res.json({ nextStep: 'password' }); // Don't reveal errors
+    res.json({ nextStep: "password" }); // Don't reveal errors
   }
 };
 
@@ -34,15 +33,15 @@ exports.loginPassword = async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await authService.authenticatePassword(email, password);
-    
+
     res.json({
       nextStep: result.nextStep,
-      message: 'Verification token sent to your email'
+      message: "Verification token sent to your email",
     });
   } catch (error) {
-    res.status(401).json({ 
-      error: 'Invalid credentials',
-      code: 'INVALID_CREDENTIALS'
+    res.status(401).json({
+      error: "Invalid credentials",
+      code: "INVALID_CREDENTIALS",
     });
   }
 };
@@ -51,24 +50,29 @@ exports.loginVerifyToken = async (req, res) => {
   try {
     const { email, token } = req.body;
     const rememberMe = req.body.rememberMe || false;
-    
+
     const deviceInfo = {
       ip: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get("User-Agent"),
     };
 
-    const result = await authService.verifyLoginToken(email, token, rememberMe, deviceInfo);
-    
-    res.cookie('refreshToken', result.refreshToken, {
+    const result = await authService.verifyLoginToken(
+      email,
+      token,
+      rememberMe,
+      deviceInfo,
+    );
+
+    res.cookie("refreshToken", result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000,
     });
 
     res.json({
       accessToken: result.accessToken,
-      redirect: '/boards'
+      redirect: "/boards",
     });
   } catch (error) {
     res.status(401).json({ error: error.message });
@@ -81,14 +85,14 @@ exports.refreshToken = async (req, res) => {
   try {
     const refreshToken = req.cookies.refreshToken;
     if (!refreshToken) {
-      return res.status(401).json({ error: 'No refresh token provided' });
+      return res.status(401).json({ error: "No refresh token provided" });
     }
 
     const result = await authService.refreshAccessToken(refreshToken);
-    
+
     res.json({
       accessToken: result.accessToken,
-      user: result.user
+      user: result.user,
     });
   } catch (error) {
     res.status(401).json({ error: error.message });
@@ -105,24 +109,26 @@ exports.googleAuth = (req, res) => {
 exports.googleCallback = async (req, res) => {
   try {
     const { code } = req.query;
-    
+
     const deviceInfo = {
       ip: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get("User-Agent"),
     };
 
     const result = await googleService.handleCallback(code, deviceInfo);
-    
-    res.cookie('refreshToken', result.refreshToken, {
+
+    res.cookie("refreshToken", result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
-    res.redirect(`${process.env.FRONTEND_URL}/oauth-callback?token=${result.accessToken}`);
+    res.redirect(
+      `${process.env.FRONTEND_URL}/oauth-callback?token=${result.accessToken}`,
+    );
   } catch (error) {
-    console.error('Google OAuth error:', error);
+    console.error("Google OAuth error:", error);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_failed`);
   }
 };
@@ -133,13 +139,15 @@ exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     await authService.forgotPassword(email);
-    
-    res.json({ 
-      message: 'If an account exists with this email, you will receive a password reset link.' 
+
+    res.json({
+      message:
+        "If an account exists with this email, you will receive a password reset link.",
     });
   } catch (error) {
-    res.json({ 
-      message: 'If an account exists with this email, you will receive a password reset link.' 
+    res.json({
+      message:
+        "If an account exists with this email, you will receive a password reset link.",
     });
   }
 };
@@ -148,8 +156,8 @@ exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
     await authService.resetPassword(token, newPassword);
-    
-    res.json({ message: 'Password reset successfully' });
+
+    res.json({ message: "Password reset successfully" });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -157,96 +165,100 @@ exports.resetPassword = async (req, res) => {
 
 // ==================== EXISTING CONTROLLERS ====================
 exports.startRegistration = async (req, res) => {
-  console.log('🔥 START REGISTRATION CALLED');
-  
+  console.log("🔥 START REGISTRATION CALLED");
+
   try {
     const { email } = req.body;
-    console.log('Email:', email);
-    
+    console.log("Email:", email);
+
     if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
+      return res.status(400).json({ error: "Email is required" });
     }
-    
+
     // Check if user already exists
     const existingUser = await User.findOne({ email, isActive: true });
     if (existingUser) {
-      return res.status(400).json({ error: 'This email is already registered.' });
+      return res
+        .status(400)
+        .json({ error: "This email is already registered." });
     }
-    
+
     // Delete any existing temporary registrations
     await TemporaryRegistration.deleteMany({ email });
-    
+
     // Generate verification code and token
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const verificationCode = Math.floor(
+      100000 + Math.random() * 900000,
+    ).toString();
     const token = uuidv4();
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
-    
+
     // Create temporary registration
     const tempReg = await TemporaryRegistration.create({
       email,
       verificationCode,
       token,
       expiresAt,
-      isVerified: false
+      isVerified: false,
     });
-    
+
     // Send verification email
     await sendVerificationEmail(email, verificationCode, token);
-    
-    console.log('✅ Verification email sent to:', email);
-    
+
+    console.log("✅ Verification email sent to:", email);
+
     res.status(200).json({
-      message: 'Verification email sent',
+      message: "Verification email sent",
       email,
       token: tempReg.token,
-      expiresAt
+      expiresAt,
     });
-    
   } catch (error) {
-    console.error('❌ Error:', error);
-    res.status(500).json({ error: 'Registration failed' });
+    console.error("❌ Error:", error);
+    res.status(500).json({ error: "Registration failed" });
   }
 };
 
 exports.verifyEmail = async (req, res) => {
-  console.log('🔍 VERIFY EMAIL CALLED');
-  console.log('Request body:', req.body);
-  
+  console.log("🔍 VERIFY EMAIL CALLED");
+  console.log("Request body:", req.body);
+
   try {
     const { email, token } = req.body;
-    
+
     if (!email || !token) {
-      return res.status(400).json({ error: 'Email and token are required' });
+      return res.status(400).json({ error: "Email and token are required" });
     }
-    
+
     // Find temporary registration
     const tempReg = await TemporaryRegistration.findOne({
       email,
       token,
       expiresAt: { $gt: new Date() },
-      isVerified: false
+      isVerified: false,
     });
-    
+
     if (!tempReg) {
-      return res.status(400).json({ error: 'Invalid or expired verification token' });
+      return res
+        .status(400)
+        .json({ error: "Invalid or expired verification token" });
     }
-    
+
     // Mark as verified
     tempReg.isVerified = true;
     await tempReg.save();
-    
-    console.log('✅ Email verified successfully for:', email);
-    
+
+    console.log("✅ Email verified successfully for:", email);
+
     res.json({
-      message: 'Email verified successfully',
+      message: "Email verified successfully",
       email,
       verified: true,
-      token: tempReg.token
+      token: tempReg.token,
     });
-    
   } catch (error) {
-    console.error('❌ Verify email error:', error);
-    res.status(500).json({ error: 'Verification failed' });
+    console.error("❌ Verify email error:", error);
+    res.status(500).json({ error: "Verification failed" });
   }
 };
 
@@ -266,9 +278,7 @@ exports.completeRegistration = async (req, res) => {
       console.log("❌ Missing required fields");
       return res.status(400).json({ 
         error: 'Missing required fields',
-        errors: [
-          { msg: 'All fields are required' }
-        ]
+        errors: [{ msg: 'All fields are required' }]
       });
     }
     
@@ -276,9 +286,7 @@ exports.completeRegistration = async (req, res) => {
       console.log("❌ Passwords do not match");
       return res.status(400).json({ 
         error: 'Password validation failed',
-        errors: [
-          { msg: 'Passwords do not match' }
-        ]
+        errors: [{ msg: 'Passwords do not match' }]
       });
     }
     
@@ -289,9 +297,7 @@ exports.completeRegistration = async (req, res) => {
       console.log("❌ Email already registered:", email);
       return res.status(400).json({ 
         error: 'Email already registered',
-        errors: [
-          { msg: 'This email is already registered' }
-        ]
+        errors: [{ msg: 'This email is already registered' }]
       });
     }
     
@@ -302,9 +308,7 @@ exports.completeRegistration = async (req, res) => {
       console.log("❌ Username already taken:", username);
       return res.status(400).json({ 
         error: 'Username taken',
-        errors: [
-          { msg: 'This username is already taken' }
-        ]
+        errors: [{ msg: 'This username is already taken' }]
       });
     }
     
@@ -321,34 +325,38 @@ exports.completeRegistration = async (req, res) => {
       console.log("❌ Invalid or expired verification token");
       return res.status(400).json({ 
         error: 'Invalid token',
-        errors: [
-          { msg: 'Invalid or expired verification token' }
-        ]
+        errors: [{ msg: 'Invalid or expired verification token' }]
       });
     }
     
     console.log("✅ Token verified, creating user...");
     
-    // Create user
-    const user = await User.create({
+    // Create user instance
+    const user = new User({
       username,
       email,
       password,
       profile: { fullname },
-      isActive: true
+      isActive: true,
+      isEmailVerified: true
     });
+    
+    // Save the user - THIS WILL TRIGGER THE PRE-SAVE MIDDLEWARE
+    await user.save();
     
     console.log("✅ User created:", user._id);
     
-    // Delete temp registration
-    await TemporaryRegistration.findByIdAndDelete(tempReg._id);
+    // Delete temp registration (don't await - let it run in background)
+    TemporaryRegistration.findByIdAndDelete(tempReg._id)
+      .then(() => console.log('✅ Temp registration deleted'))
+      .catch(err => console.error('⚠️ Error deleting temp registration:', err));
     
     // Generate token
     const accessToken = generateToken(user._id);
     
     console.log("✅ Registration complete, sending response");
     
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Registration completed successfully',
       user: {
         id: user._id,
@@ -389,13 +397,56 @@ exports.completeRegistration = async (req, res) => {
   }
 };
 
+// Add or update this function in your authController.js
 exports.login = async (req, res) => {
   try {
-    const { email, username, password } = req.body;
+    const { email, password } = req.body;
     
-    // ... your existing login code
+    console.log("🔐 LOGIN ATTEMPT for email:", email);
+    
+    if (!email || !password) {
+      console.log("❌ Missing email or password");
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    
+    // Find user by email and include password field
+    const user = await User.findOne({ email }).select('+password');
+    
+    if (!user) {
+      console.log("❌ User not found:", email);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    console.log("✅ User found, comparing password...");
+    
+    // Compare password
+    const isMatch = await user.comparePassword(password);
+    
+    if (!isMatch) {
+      console.log("❌ Password mismatch for user:", email);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    console.log("✅ Password matched for user:", email);
+    
+    // Generate token
+    const token = generateToken(user._id);
+    
+    console.log("✅ Login successful for:", email);
+    
+    res.json({
+      message: 'Login successful',
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        profile: user.profile
+      }
+    });
+    
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
     res.status(500).json({ error: 'Login failed' });
   }
 };
@@ -404,34 +455,34 @@ exports.login = async (req, res) => {
 exports.logout = async (req, res) => {
   try {
     const refreshToken = req.cookies.refreshToken;
-    
+
     if (refreshToken) {
       // Mark token as revoked instead of deleting (for audit)
       await RefreshToken.findOneAndUpdate(
         { token: refreshToken },
-        { revoked: true }
+        { revoked: true },
       );
     }
-    
+
     // Clear the cookie
-    res.clearCookie('refreshToken', {
+    res.clearCookie("refreshToken", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict'
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
     });
-    
+
     // Also clear any session data if using sessions
     if (req.session) {
       req.session.destroy();
     }
-    
-    res.status(200).json({ 
-      message: 'Logout successful',
-      redirect: '/login'
+
+    res.status(200).json({
+      message: "Logout successful",
+      redirect: "/login",
     });
   } catch (error) {
-    console.error('Logout error:', error);
-    res.status(500).json({ error: 'Logout failed' });
+    console.error("Logout error:", error);
+    res.status(500).json({ error: "Logout failed" });
   }
 };
 
@@ -439,32 +490,32 @@ exports.logout = async (req, res) => {
 exports.logoutAll = async (req, res) => {
   try {
     const userId = req.user._id;
-    
+
     // Revoke all refresh tokens for this user
     await RefreshToken.updateMany(
       { userId, revoked: false },
-      { revoked: true }
+      { revoked: true },
     );
-    
-    res.clearCookie('refreshToken');
-    
-    res.status(200).json({ 
-      message: 'Logged out from all devices' 
+
+    res.clearCookie("refreshToken");
+
+    res.status(200).json({
+      message: "Logged out from all devices",
     });
   } catch (error) {
-    console.error('Logout all error:', error);
-    res.status(500).json({ error: 'Logout from all devices failed' });
+    console.error("Logout all error:", error);
+    res.status(500).json({ error: "Logout from all devices failed" });
   }
 };
 
 exports.getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('-password');
-    
+    const user = await User.findById(req.user._id).select("-password");
+
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: "User not found" });
     }
-    
+
     res.status(200).json({
       user: {
         id: user._id,
@@ -472,12 +523,12 @@ exports.getProfile = async (req, res) => {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        profile: user.profile
-      }
+        profile: user.profile,
+      },
     });
   } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({ error: 'Failed to get profile' });
+    console.error("Get profile error:", error);
+    res.status(500).json({ error: "Failed to get profile" });
   }
 };
 
@@ -485,29 +536,32 @@ exports.updateProfile = async (req, res) => {
   try {
     // ... your existing update profile code
   } catch (error) {
-    console.error('Update profile error:', error);
-    res.status(500).json({ error: 'Failed to update profile' });
+    console.error("Update profile error:", error);
+    res.status(500).json({ error: "Failed to update profile" });
   }
 };
 
 exports.checkEmail = async (req, res) => {
   try {
     const { email } = req.body;
-    
+
     if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
+      return res.status(400).json({ error: "Email is required" });
     }
-    
+
     const emailExists = await User.exists({ email, isActive: true });
-    
+
     res.status(200).json({
       email,
       available: !emailExists,
-      exists: emailExists
+      exists: emailExists,
     });
   } catch (error) {
-    console.error('Check email error:', error);
-    res.status(500).json({ error: 'Failed to check email' });
+    console.error("Check email error:", error);
+    res.status(500).json({ error: "Failed to check email" });
   }
 };
-console.log('✅ authController loaded with functions:', Object.keys(module.exports));
+console.log(
+  "✅ authController loaded with functions:",
+  Object.keys(module.exports),
+);

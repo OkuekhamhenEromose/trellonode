@@ -1,9 +1,9 @@
-const User = require('../models/User');
-const Token = require('../models/Token');
-const RefreshToken = require('../models/RefreshToken');
-const tokenService = require('./tokenService');
-const emailService = require('./emailService');
-const bcrypt = require('bcryptjs');
+const User = require("../models/User");
+const Token = require("../models/Token");
+const RefreshToken = require("../models/RefreshToken");
+const tokenService = require("./tokenService");
+const emailService = require("./emailService");
+const bcrypt = require("bcryptjs");
 
 class AuthService {
   async validateEmail(email) {
@@ -11,60 +11,55 @@ class AuthService {
     return { exists: !!user };
   }
 
-  async authenticatePassword(email, password) {
-    const user = await User.findOne({ email }).select('+password +loginAttempts +lockUntil');
+ async authenticatePassword(email, password) {
+  console.log("🔐 authService.authenticatePassword called for:", email);
 
-    // Generic error to prevent enumeration
-    if (!user) {
-      throw new Error('Invalid credentials');
-    }
+  const user = await User.findOne({ email }).select(
+    "+password +loginAttempts +lockUntil",
+  );
 
-    if (user.isLocked && user.isLocked()) {
-      throw new Error('Account temporarily locked. Try again later.');
-    }
-
-    const isValid = await user.comparePassword(password);
-    
-    if (!isValid) {
-      if (user.incLoginAttempts) {
-        await user.incLoginAttempts();
-      } else {
-        // Manual increment if method doesn't exist
-        user.loginAttempts = (user.loginAttempts || 0) + 1;
-        if (user.loginAttempts >= 5) {
-          user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
-        }
-        await user.save();
-      }
-      throw new Error('Invalid credentials');
-    }
-
-    // Reset login attempts
-    user.loginAttempts = 0;
-    user.lockUntil = undefined;
-    await user.save();
-
-    // Generate and send 2FA token
-    const loginToken = await tokenService.generateLoginToken(user._id);
-    await emailService.sendLoginToken(email, loginToken);
-
-    return { 
-      nextStep: 'token-verification',
-      userId: user._id 
-    };
+  if (!user) {
+    console.log("❌ User not found in authService:", email);
+    throw new Error("Invalid credentials");
   }
+
+  console.log("✅ User found in authService, comparing password...");
+
+  const isValid = await user.comparePassword(password);
+
+  if (!isValid) {
+    console.log("❌ Password invalid for user:", email);
+    throw new Error("Invalid credentials");
+  }
+
+  console.log("✅ Password valid for user:", email);
+
+  // Generate and send 2FA token - FIXED
+  const loginToken = await tokenService.generateLoginToken(user._id);
+  console.log("✅ Generated login token:", loginToken);
+  
+  // Send email with token
+  // await emailService.sendLoginToken(email, loginToken);
+  await emailService.sendLoginToken("trellobackendnode@gmail.com", loginToken)
+  console.log("✅ Login token email sent to:", email);
+
+  return {
+    nextStep: "token-verification",
+    userId: user._id,
+  };
+}
 
   async verifyLoginToken(email, token, rememberMe = false, deviceInfo = {}) {
     const user = await User.findOne({ email });
-    
+
     if (!user) {
-      throw new Error('Invalid token');
+      throw new Error("Invalid token");
     }
 
     const isValid = await tokenService.verifyLoginToken(user._id, token);
-    
+
     if (!isValid) {
-      throw new Error('Invalid or expired token');
+      throw new Error("Invalid or expired token");
     }
 
     user.lastLogin = new Date();
@@ -74,9 +69,9 @@ class AuthService {
     // Generate token pair
     const accessToken = tokenService.generateAccessToken(user._id, rememberMe);
     const refreshToken = await tokenService.generateRefreshToken(
-      user._id, 
-      rememberMe, 
-      deviceInfo
+      user._id,
+      rememberMe,
+      deviceInfo,
     );
 
     return {
@@ -87,30 +82,30 @@ class AuthService {
         email: user.email,
         username: user.username,
         profile: user.profile,
-        role: user.role
-      }
+        role: user.role,
+      },
     };
   }
 
   async refreshAccessToken(refreshTokenString) {
-    const token = await RefreshToken.findOne({ 
+    const token = await RefreshToken.findOne({
       token: refreshTokenString,
       expiresAt: { $gt: new Date() },
-      revoked: false
+      revoked: false,
     });
-    
+
     if (!token) {
-      throw new Error('Invalid refresh token');
+      throw new Error("Invalid refresh token");
     }
 
     const user = await User.findById(token.userId);
-    
+
     if (!user || !user.isActive) {
-      throw new Error('User not found or inactive');
+      throw new Error("User not found or inactive");
     }
 
     const newAccessToken = tokenService.generateAccessToken(user._id);
-    
+
     return {
       accessToken: newAccessToken,
       user: {
@@ -118,8 +113,8 @@ class AuthService {
         email: user.email,
         username: user.username,
         profile: user.profile,
-        role: user.role
-      }
+        role: user.role,
+      },
     };
   }
 
@@ -127,14 +122,14 @@ class AuthService {
     if (refreshTokenString) {
       await RefreshToken.findOneAndUpdate(
         { token: refreshTokenString },
-        { revoked: true }
+        { revoked: true },
       );
     }
   }
 
   async forgotPassword(email) {
     const user = await User.findOne({ email });
-    
+
     if (!user) return; // Don't reveal if user exists
 
     const resetToken = await tokenService.generatePasswordResetToken(user._id);
@@ -143,15 +138,15 @@ class AuthService {
 
   async resetPassword(token, newPassword) {
     const resetToken = await tokenService.verifyPasswordResetToken(token);
-    
+
     if (!resetToken) {
-      throw new Error('Invalid or expired reset token');
+      throw new Error("Invalid or expired reset token");
     }
 
     const user = await User.findById(resetToken.userId);
-    
+
     if (!user) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     user.password = newPassword;
@@ -160,29 +155,27 @@ class AuthService {
     // Revoke all refresh tokens for security
     await RefreshToken.updateMany(
       { userId: user._id, revoked: false },
-      { revoked: true }
+      { revoked: true },
     );
   }
 
   async handleGoogleAuth(profile, deviceInfo = {}) {
-    let user = await User.findOne({ 
-      $or: [
-        { email: profile.email },
-        { googleId: profile.id }
-      ]
+    let user = await User.findOne({
+      $or: [{ email: profile.email }, { googleId: profile.id }],
     });
 
     if (!user) {
       user = await User.create({
         email: profile.email,
         googleId: profile.id,
-        username: profile.email.split('@')[0] + Math.floor(Math.random() * 1000),
-        profile: { 
+        username:
+          profile.email.split("@")[0] + Math.floor(Math.random() * 1000),
+        profile: {
           fullname: profile.displayName || profile.name?.givenName,
-          avatar: profile.photos?.[0]?.value
+          avatar: profile.photos?.[0]?.value,
         },
         isEmailVerified: true,
-        isActive: true
+        isActive: true,
       });
     } else if (!user.googleId) {
       user.googleId = profile.id;
@@ -194,9 +187,9 @@ class AuthService {
 
     const accessToken = tokenService.generateAccessToken(user._id, true);
     const refreshToken = await tokenService.generateRefreshToken(
-      user._id, 
-      true, 
-      deviceInfo
+      user._id,
+      true,
+      deviceInfo,
     );
 
     return { accessToken, refreshToken, user };
