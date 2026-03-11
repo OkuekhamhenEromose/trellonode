@@ -7,6 +7,7 @@ const EmailVerificationToken = require('../models/EmailVerificationToken');
 const { v4: uuidv4 } = require('uuid');
 const { sendVerificationEmail } = require('../utils/email');
 const jwt = require('jsonwebtoken');
+const RefreshToken = require('../models/RefreshToken');
 
 const generateToken = (userId) => {
   return jwt.sign(
@@ -399,15 +400,60 @@ exports.login = async (req, res) => {
   }
 };
 
+// Update the logout function
 exports.logout = async (req, res) => {
   try {
     const refreshToken = req.cookies.refreshToken;
-    await authService.logout(refreshToken);
+    
+    if (refreshToken) {
+      // Mark token as revoked instead of deleting (for audit)
+      await RefreshToken.findOneAndUpdate(
+        { token: refreshToken },
+        { revoked: true }
+      );
+    }
+    
+    // Clear the cookie
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict'
+    });
+    
+    // Also clear any session data if using sessions
+    if (req.session) {
+      req.session.destroy();
+    }
+    
+    res.status(200).json({ 
+      message: 'Logout successful',
+      redirect: '/login'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ error: 'Logout failed' });
+  }
+};
+
+// Add a logout from all devices function
+exports.logoutAll = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    
+    // Revoke all refresh tokens for this user
+    await RefreshToken.updateMany(
+      { userId, revoked: false },
+      { revoked: true }
+    );
     
     res.clearCookie('refreshToken');
-    res.status(200).json({ message: 'Logout successful' });
+    
+    res.status(200).json({ 
+      message: 'Logged out from all devices' 
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Logout failed' });
+    console.error('Logout all error:', error);
+    res.status(500).json({ error: 'Logout from all devices failed' });
   }
 };
 

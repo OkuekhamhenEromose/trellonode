@@ -176,6 +176,14 @@ if (typeof auth === 'function' && typeof authController.logout === 'function') {
   console.error('❌ Missing dependencies for /logout');
 }
 
+// Add after the existing logout route
+if (typeof auth === 'function' && typeof authController.logoutAll === 'function') {
+  router.post('/logout-all', auth, authController.logoutAll);
+  console.log('✅ Registered /logout-all');
+} else {
+  console.error('❌ Missing dependencies for /logout-all');
+}
+
 // ==================== PROFILE MANAGEMENT ====================
 if (typeof auth === 'function' && typeof authController.getProfile === 'function') {
   router.get('/profile', auth, authController.getProfile);

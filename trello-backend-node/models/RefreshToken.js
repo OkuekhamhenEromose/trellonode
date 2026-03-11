@@ -4,7 +4,8 @@ const refreshTokenSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    index: true
   },
   token: {
     type: String,
@@ -17,7 +18,12 @@ const refreshTokenSchema = new mongoose.Schema({
   },
   deviceInfo: {
     ip: String,
-    userAgent: String
+    userAgent: String,
+    location: String
+  },
+  revoked: {
+    type: Boolean,
+    default: false
   },
   createdAt: {
     type: Date,
@@ -25,6 +31,7 @@ const refreshTokenSchema = new mongoose.Schema({
   }
 });
 
+// Auto-delete expired tokens
 refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('RefreshToken', refreshTokenSchema);

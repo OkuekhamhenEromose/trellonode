@@ -53,7 +53,7 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// FIXED: Use callback pattern instead of async/await
+// FIXED: Use function declaration and ensure next is only called once
 userSchema.pre('save', function(next) {
   const user = this;
   
@@ -62,20 +62,19 @@ userSchema.pre('save', function(next) {
     return next();
   }
   
-  // Generate salt and hash using callbacks
-  bcrypt.genSalt(12, function(err, salt) {
-    if (err) return next(err);
-    
-    bcrypt.hash(user.password, salt, function(err, hash) {
-      if (err) return next(err);
-      
+  // Use promise-based approach instead of callbacks
+  bcrypt.genSalt(12)
+    .then(salt => bcrypt.hash(user.password, salt))
+    .then(hash => {
       user.password = hash;
       next();
+    })
+    .catch(err => {
+      next(err);
     });
-  });
 });
 
-// Compare password method - this can stay async
+// Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword) {
   try {
     return await bcrypt.compare(candidatePassword, this.password);

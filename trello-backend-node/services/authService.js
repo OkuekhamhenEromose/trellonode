@@ -1,6 +1,9 @@
 const User = require('../models/User');
+const Token = require('../models/Token');
+const RefreshToken = require('../models/RefreshToken');
 const tokenService = require('./tokenService');
 const emailService = require('./emailService');
+const bcrypt = require('bcryptjs');
 
 class AuthService {
   async validateEmail(email) {
@@ -9,30 +12,37 @@ class AuthService {
   }
 
   async authenticatePassword(email, password) {
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email }).select('+password +loginAttempts +lockUntil');
 
     // Generic error to prevent enumeration
     if (!user) {
       throw new Error('Invalid credentials');
     }
 
-    if (user.isLocked()) {
-      throw new Error('Account temporarily locked');
+    if (user.isLocked && user.isLocked()) {
+      throw new Error('Account temporarily locked. Try again later.');
     }
 
     const isValid = await user.comparePassword(password);
     
     if (!isValid) {
-      await user.incLoginAttempts();
+      if (user.incLoginAttempts) {
+        await user.incLoginAttempts();
+      } else {
+        // Manual increment if method doesn't exist
+        user.loginAttempts = (user.loginAttempts || 0) + 1;
+        if (user.loginAttempts >= 5) {
+          user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
+        }
+        await user.save();
+      }
       throw new Error('Invalid credentials');
     }
 
     // Reset login attempts
-    if (user.loginAttempts > 0) {
-      user.loginAttempts = 0;
-      user.lockUntil = undefined;
-      await user.save();
-    }
+    user.loginAttempts = 0;
+    user.lockUntil = undefined;
+    await user.save();
 
     // Generate and send 2FA token
     const loginToken = await tokenService.generateLoginToken(user._id);
@@ -75,14 +85,19 @@ class AuthService {
       user: {
         id: user._id,
         email: user.email,
+        username: user.username,
         profile: user.profile,
         role: user.role
       }
     };
   }
 
-  async refreshAccessToken(refreshToken) {
-    const token = await tokenService.verifyRefreshToken(refreshToken);
+  async refreshAccessToken(refreshTokenString) {
+    const token = await RefreshToken.findOne({ 
+      token: refreshTokenString,
+      expiresAt: { $gt: new Date() },
+      revoked: false
+    });
     
     if (!token) {
       throw new Error('Invalid refresh token');
@@ -101,15 +116,19 @@ class AuthService {
       user: {
         id: user._id,
         email: user.email,
+        username: user.username,
         profile: user.profile,
         role: user.role
       }
     };
   }
 
-  async logout(refreshToken) {
-    if (refreshToken) {
-      await tokenService.revokeRefreshToken(refreshToken);
+  async logout(refreshTokenString) {
+    if (refreshTokenString) {
+      await RefreshToken.findOneAndUpdate(
+        { token: refreshTokenString },
+        { revoked: true }
+      );
     }
   }
 
@@ -139,7 +158,10 @@ class AuthService {
     await user.save();
 
     // Revoke all refresh tokens for security
-    await tokenService.revokeAllUserTokens(user._id);
+    await RefreshToken.updateMany(
+      { userId: user._id, revoked: false },
+      { revoked: true }
+    );
   }
 
   async handleGoogleAuth(profile, deviceInfo = {}) {
@@ -154,6 +176,7 @@ class AuthService {
       user = await User.create({
         email: profile.email,
         googleId: profile.id,
+        username: profile.email.split('@')[0] + Math.floor(Math.random() * 1000),
         profile: { 
           fullname: profile.displayName || profile.name?.givenName,
           avatar: profile.photos?.[0]?.value
