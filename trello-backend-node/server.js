@@ -6,7 +6,7 @@ console.log('🟢 2. Express loaded');
 
 const mongoose = require('mongoose');
 console.log('🟢 3. Mongoose loaded');
-
+// my name is vishnu and i am a software developer and i am working on a trello clone project and this is the backend code for the server.js file and i am using node.js and express.js and mongoose for the database connection and socket.io for real-time communication and cors for handling cross-origin requests and dotenv for managing environment variables and fs and path for handling file uploads and static files and i am also adding some console logs to help with debugging and understanding the flow of the application as it starts up and runs.
 const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
