@@ -25,6 +25,9 @@ console.log('🟢 4. All modules loaded');
 // Load environment variables
 dotenv.config();
 console.log('🟢 5. Environment variables loaded');
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']);
+console.log('🟢 5.1 DNS forced to Google DNS');
 
 // ============================================
 // GLOBAL ERROR HANDLING - MUST BE BEFORE ANY APP CREATION
