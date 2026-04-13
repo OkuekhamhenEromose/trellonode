@@ -7,13 +7,6 @@ console.log('🟢 2. Express loaded');
 const mongoose = require('mongoose');
 console.log('🟢 3. Mongoose loaded');
 
-// my name is vishnu and i am a software developer and i am working on a trello clone project 
-// and this is the backend code for the server.js file and i am using node.js and express.js 
-// and mongoose for the database connection and socket.io for real-time communication and cors 
-// for handling cross-origin requests and dotenv for managing environment variables and fs and 
-// path for handling file uploads and static files and i am also adding some console logs to 
-// help with debugging and understanding the flow of the application as it starts up and runs.
-
 const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
@@ -25,26 +18,6 @@ console.log('🟢 4. All modules loaded');
 // Load environment variables
 dotenv.config();
 console.log('🟢 5. Environment variables loaded');
-const dns = require('dns');
-dns.setServers(['8.8.8.8', '8.8.4.4']);
-console.log('🟢 5.1 DNS forced to Google DNS');
-
-// ============================================
-// GLOBAL ERROR HANDLING - MUST BE BEFORE ANY APP CREATION
-// ============================================
-
-// Handle uncaught exceptions (synchronous errors)
-process.on('uncaughtException', (err) => {
-  console.error('💥 UNCAUGHT EXCEPTION! Shutting down...');
-  console.error('Error Name:', err.name);
-  console.error('Error Message:', err.message);
-  console.error('Error Stack:', err.stack);
-  
-  // In production, you might want to gracefully shutdown
-  if (process.env.NODE_ENV === 'production') {
-    process.exit(1);
-  }
-});
 
 // Initialize Express app
 const app = express();
@@ -52,6 +25,51 @@ console.log('🟢 6. Express app created');
 
 const server = http.createServer(app);
 console.log('🟢 7. HTTP server created');
+
+// Enhanced CORS configuration - MUST come before routes
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'https://trello-next-blush.vercel.app',
+      'https://trello-next-blush.vercel.app/',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://trellonode.onrender.com'
+    ];
+    
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Remove trailing slash for comparison
+    const originWithoutSlash = origin.replace(/\/$/, '');
+    
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes(originWithoutSlash)) {
+      callback(null, true);
+    } else {
+      console.warn(`⚠️ CORS blocked origin: ${origin}`);
+      callback(null, true); // Temporarily allow all origins for debugging
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'X-CSRF-Token'
+  ],
+  exposedHeaders: ['Set-Cookie', 'Date', 'ETag'],
+  optionsSuccessStatus: 204
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+console.log('🟢 CORS configured');
 
 const io = socketIo(server, {
   cors: {
@@ -73,13 +91,6 @@ console.log('🟢 9. Uploads directory checked');
 // MIDDLEWARE
 // ============================================
 
-// CORS configuration
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true,
-  optionsSuccessStatus: 200
-}));
-
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 console.log('🟢 10. Middleware configured');
@@ -89,36 +100,50 @@ app.use('/uploads', express.static(uploadsDir));
 console.log('🟢 11. Static files configured');
 
 // ============================================
-// DATABASE CONNECTION
+// DATABASE CONNECTION - FIXED
 // ============================================
 console.log('🟢 12. Connecting to MongoDB...');
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/trello-clone', {
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000,
-  family: 4 // Use IPv4, skip trying IPv6
-})
-.then(() => {
-  console.log('✅ MongoDB connected');
-  console.log(`📊 Database: ${mongoose.connection.name}`);
-  console.log(`🔗 Host: ${mongoose.connection.host}`);
-})
-.catch(err => {
-  console.error('❌ MongoDB connection error:', err.message);
-  console.log('\n🔧 Troubleshooting:');
-  console.log('1. Check if MongoDB is running');
-  console.log('2. Verify connection string');
-  console.log('3. Check network access in MongoDB Atlas');
+const mongoURI = process.env.MONGODB_URI;
+
+if (!mongoURI) {
+  console.error('❌ MONGODB_URI is not defined in environment variables');
+  console.log('⚠️ Server will start but database features will not work');
+} else {
+  console.log('📝 Connection string found (credentials hidden)');
   
-  // Don't exit immediately in development
-  if (process.env.NODE_ENV === 'production') {
-    process.exit(1);
-  }
-});
+  // Simplified connection options for better compatibility
+  const mongooseOptions = {
+    serverSelectionTimeoutMS: 30000, // Increased timeout
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 30000,
+    family: 4 // Use IPv4
+  };
+
+  mongoose.connect(mongoURI, mongooseOptions)
+    .then(() => {
+      console.log('✅ MongoDB connected successfully');
+      console.log(`📊 Database: ${mongoose.connection.name}`);
+      console.log(`🔗 Host: ${mongoose.connection.host}`);
+    })
+    .catch(err => {
+      console.error('❌ MongoDB connection error:', err.message);
+      console.error('Error details:', {
+        name: err.name,
+        code: err.code
+      });
+      console.log('\n🔧 Troubleshooting:');
+      console.log('1. Check if MongoDB Atlas cluster is running (not paused)');
+      console.log('2. Verify Network Access in MongoDB Atlas (add 0.0.0.0/0)');
+      console.log('3. Check if connection string is correct');
+      console.log('4. Verify username and password in connection string');
+      console.log('\n⚠️ Server will continue running without database connection');
+    });
+}
 
 // Handle MongoDB connection events
 mongoose.connection.on('error', (err) => {
-  console.error('❌ MongoDB connection error:', err);
+  console.error('❌ MongoDB connection error:', err.message);
 });
 
 mongoose.connection.on('disconnected', () => {
@@ -167,9 +192,7 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date(),
     uptime: process.uptime(),
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    environment: process.env.NODE_ENV || 'development',
-    mongoVersion: '7.0.2',
-    mongooseVersion: '9.1.5'
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 console.log('🟢 15. Health route defined');
@@ -187,6 +210,16 @@ app.get('/api/test', (req, res) => {
 });
 console.log('🟢 16. Test route defined');
 
+// CORS test endpoint
+app.get('/api/cors-test', (req, res) => {
+  res.json({
+    message: 'CORS is working!',
+    origin: req.headers.origin || 'No origin header',
+    timestamp: new Date().toISOString()
+  });
+});
+console.log('🟢 CORS test route defined');
+
 // ============================================
 // LOAD ROUTES
 // ============================================
@@ -199,15 +232,20 @@ try {
   console.log('✅ Auth routes loaded from file');
 } catch (err) {
   console.error('❌ Error loading auth routes:', err.message);
-  process.exit(1);
+  // Create fallback auth routes
+  const router = express.Router();
+  router.post('/register/start', (req, res) => {
+    res.json({ message: 'Auth route placeholder - database not connected' });
+  });
+  router.post('/login', (req, res) => {
+    res.json({ message: 'Auth route placeholder - database not connected' });
+  });
+  authRoutes = router;
 }
 
 if (authRoutes) {
   app.use('/api/auth', authRoutes);
   console.log('✅ Auth routes mounted at /api/auth');
-} else {
-  console.error('❌ Auth routes is undefined');
-  process.exit(1);
 }
 
 // Load board routes
@@ -218,7 +256,6 @@ try {
   console.log('✅ Board routes loaded');
 } catch (err) {
   console.log('⚠️ Board routes not found, using basic routes');
-  console.error('Error details:', err.message);
   app.get('/api/boards', (req, res) => {
     res.json({ message: 'Get boards endpoint' });
   });
@@ -237,86 +274,20 @@ app.use((req, res) => {
   res.status(404).json({ 
     error: 'Route not found',
     path: req.path,
-    method: req.method,
-    message: `Cannot ${req.method} ${req.path}`
+    method: req.method
   });
 });
 console.log('🟢 19. 404 handler set');
 
-// Global error handler - for all other errors
+// Global error handler
 app.use((err, req, res, next) => {
   console.error('❌ Error:', err.message);
-  console.error('Stack:', err.stack);
-  
-  // Send appropriate response based on environment
   res.status(err.status || 500).json({ 
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
   });
 });
 console.log('🟢 20. Error handler set');
-
-// ============================================
-// START SERVER WITH GRACEFUL SHUTDOWN
-// ============================================
-
-// Handle unhandled promise rejections (asynchronous errors)
-process.on('unhandledRejection', (err) => {
-  console.error('💥 UNHANDLED REJECTION! Shutting down...');
-  console.error('Error Name:', err.name);
-  console.error('Error Message:', err.message);
-  console.error('Error Stack:', err.stack);
-  
-  // Gracefully shutdown the server
-  server.close(() => {
-    console.log('💤 Server closed. Shutting down process...');
-    mongoose.connection.close(false, () => {
-      console.log('💤 MongoDB connection closed');
-      process.exit(1);
-    });
-  });
-  
-  // Force shutdown after 10 seconds if server doesn't close
-  setTimeout(() => {
-    console.error('⚠️ Force shutdown after timeout');
-    process.exit(1);
-  }, 10000);
-});
-
-// Graceful shutdown for SIGTERM (Render sends this on restart)
-process.on('SIGTERM', () => {
-  console.log('👋 SIGTERM received. Shutting down gracefully...');
-  
-  server.close(() => {
-    console.log('💤 Server closed');
-    mongoose.connection.close(false, () => {
-      console.log('💤 MongoDB connection closed');
-      console.log('✅ Graceful shutdown complete');
-      process.exit(0);
-    });
-  });
-  
-  // Force shutdown after 10 seconds
-  setTimeout(() => {
-    console.error('⚠️ Force shutdown after timeout');
-    process.exit(1);
-  }, 10000);
-});
-
-// Handle SIGINT (Ctrl+C)
-process.on('SIGINT', () => {
-  console.log('\n👋 SIGINT received. Shutting down gracefully...');
-  
-  server.close(() => {
-    console.log('💤 Server closed');
-    mongoose.connection.close(false, () => {
-      console.log('💤 MongoDB connection closed');
-      console.log('✅ Graceful shutdown complete');
-      process.exit(0);
-    });
-  });
-});
 
 // ============================================
 // START LISTENING
@@ -335,10 +306,11 @@ server.listen(PORT, () => {
   console.log(`🏭 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('');
   console.log('🔗 API Endpoints:');
-  console.log(`   🔍 Health: http://localhost:${PORT}/api/health`);
-  console.log(`   🔍 Test: http://localhost:${PORT}/api/test`);
-  console.log(`   🔐 Auth: http://localhost:${PORT}/api/auth/login`);
-  console.log(`   📋 Boards: http://localhost:${PORT}/api/boards`);
+  console.log(`   🔍 Health: https://trellonode.onrender.com/api/health`);
+  console.log(`   🔍 Test: https://trellonode.onrender.com/api/test`);
+  console.log(`   🔍 CORS Test: https://trellonode.onrender.com/api/cors-test`);
+  console.log(`   🔐 Auth: https://trellonode.onrender.com/api/auth/login`);
+  console.log(`   📋 Boards: https://trellonode.onrender.com/api/boards`);
   console.log('');
   console.log('🛑 Use Ctrl+C to stop the server');
   console.log('='.repeat(50) + '\n');
