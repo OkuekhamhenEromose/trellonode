@@ -1,42 +1,35 @@
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 class EmailService {
   constructor() {
-    console.log('📧 Initializing EmailService with working Gmail configuration...');
+    console.log('📧 Initializing EmailService with Brevo API...');
     
-    // Use EXACTLY the same config that worked in your test
-    this.transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: 'charleschmidth@gmail.com',
-        pass: 'rjjtlkmcarmtwcwx' // Your App Password
-      }
-    });
-    
-    // Verify on startup
-    this.verifyConnection();
-  }
-
-  async verifyConnection() {
-    try {
-      await this.transporter.verify();
-      console.log('✅ Email connection verified successfully');
-    } catch (error) {
-      console.error('❌ Email connection failed:', error.message);
+    if (process.env.BREVO_API_KEY) {
+      console.log('✅ [EmailService] Brevo API key found. Ready!');
+    } else {
+      console.warn('⚠️ [EmailService] No Brevo API key found.');
     }
   }
 
+  async verifyConnection() {
+    // Brevo API doesn't need connection verification
+    console.log('✅ Email service ready (Brevo API)');
+    return true;
+  }
+
   async sendLoginToken(email, token) {
-    console.log('📧 ===== SENDING LOGIN TOKEN =====');
+    console.log('📧 ===== SENDING LOGIN TOKEN VIA BREVO =====');
     console.log('📧 To:', email);
     console.log('📧 Token:', token);
     
-    const mailOptions = {
-      from: '"Trello Test" <charleschmidth@gmail.com>', // Use the same from as your test
-      to: email,
+    const emailData = {
+      sender: { 
+        name: 'Trello Clone', 
+        email: 'charleschmidth@gmail.com' 
+      },
+      to: [{ email: email }],
       subject: `🔐 Your Trello login code: ${token}`,
-      text: `Your Trello login verification code is: ${token}\n\nThis code will expire in 10 minutes.`,
-      html: `
+      htmlContent: `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #0052CC;">Trello Login Verification</h2>
           <p>Your login verification code is:</p>
@@ -46,42 +39,65 @@ class EmailService {
           <p>This code will expire in 10 minutes.</p>
           <p>If you didn't request this code, please ignore this email.</p>
         </div>
-      `
+      `,
+      textContent: `Your Trello login verification code is: ${token}\n\nThis code will expire in 10 minutes.`
     };
 
     try {
-      console.log('📧 Sending email via Gmail...');
-      const info = await this.transporter.sendMail(mailOptions);
+      const response = await axios.post('https://api.brevo.com/v3/smtp/email', emailData, {
+        headers: {
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      
       console.log('✅ LOGIN TOKEN EMAIL SENT SUCCESSFULLY!');
-      console.log('📧 Message ID:', info.messageId);
-      return info;
+      console.log('📧 Message ID:', response.data.messageId);
+      return response.data;
     } catch (error) {
       console.error('❌ Failed to send login token email:');
-      console.error('❌ Error:', error.message);
+      console.error('❌ Status:', error.response?.status);
+      console.error('❌ Error:', error.response?.data || error.message);
+      
+      // Still log the token for testing
+      console.log(`🔑 Login token for ${email}: ${token}`);
       throw error;
     }
   }
 
   async sendVerificationEmail(email, verificationCode, token) {
-    console.log(`📧 Sending verification email to ${email}...`);
+    console.log(`📧 [EmailService] Sending verification email to ${email}...`);
     
-    const mailOptions = {
-      from: '"Trello Test" <charleschmidth@gmail.com>',
-      to: email,
+    const emailData = {
+      sender: { 
+        name: 'Trello Clone', 
+        email: 'charleschmidth@gmail.com' 
+      },
+      to: [{ email: email }],
       subject: 'Verify Your Email - Trello Clone',
-      html: `
+      htmlContent: `
         <h1>Email Verification</h1>
         <p>Your verification code is: <strong>${verificationCode}</strong></p>
+        <p>Or click the link below:</p>
+        <p><a href="${process.env.FRONTEND_URL}/verify-email?token=${token}&email=${encodeURIComponent(email)}">Verify Email</a></p>
         <p>This code will expire in 30 minutes.</p>
       `,
+      textContent: `Your verification code is: ${verificationCode}\n\nOr visit: ${process.env.FRONTEND_URL}/verify-email?token=${token}&email=${email}`
     };
 
     try {
-      const info = await this.transporter.sendMail(mailOptions);
-      console.log(`✅ Verification email sent: ${info.messageId}`);
-      return info;
+      const response = await axios.post('https://api.brevo.com/v3/smtp/email', emailData, {
+        headers: {
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log(`✅ Verification email sent: ${response.data.messageId}`);
+      return response.data;
     } catch (error) {
-      console.error('❌ Error sending verification email:', error);
+      console.error('❌ Error sending verification email:', error.response?.data || error.message);
       throw error;
     }
   }
