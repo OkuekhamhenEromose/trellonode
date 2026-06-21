@@ -38,9 +38,8 @@ class AuthService {
   const loginToken = await tokenService.generateLoginToken(user._id);
   console.log("✅ Generated login token:", loginToken);
   
-  // Send email with token
-  // await emailService.sendLoginToken(email, loginToken);
-  await emailService.sendLoginToken("trellobackendnode@gmail.com", loginToken)
+ 
+  await emailService.sendLoginToken(email, loginToken)
   console.log("✅ Login token email sent to:", email);
 
   return {
