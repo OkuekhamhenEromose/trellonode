@@ -102,33 +102,48 @@ exports.refreshToken = async (req, res) => {
 // ==================== GOOGLE OAUTH ====================
 
 exports.googleAuth = (req, res) => {
-  const url = googleService.getAuthUrl();
-  res.redirect(url);
+  try {
+    console.log('🔑 Google OAuth initiated');
+    const url = googleService.getAuthUrl();
+    res.redirect(url);
+  } catch (error) {
+    console.error('❌ Google OAuth error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_init_failed`);
+  }
 };
 
 exports.googleCallback = async (req, res) => {
   try {
     const { code } = req.query;
+    console.log('🔄 Google OAuth callback received');
+
+    if (!code) {
+      console.error('❌ No authorization code received');
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=no_auth_code`);
+    }
 
     const deviceInfo = {
       ip: req.ip,
-      userAgent: req.get("User-Agent"),
+      userAgent: req.get('User-Agent'),
     };
 
     const result = await googleService.handleCallback(code, deviceInfo);
 
-    res.cookie("refreshToken", result.refreshToken, {
+    // Set refresh token cookie
+    res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
-    res.redirect(
-      `${process.env.FRONTEND_URL}/oauth-callback?token=${result.accessToken}`,
-    );
+    // Redirect to frontend with token
+    const redirectUrl = `${process.env.FRONTEND_URL}/oauth-callback?token=${result.accessToken}`;
+    console.log('✅ Google OAuth successful, redirecting to:', redirectUrl);
+    res.redirect(redirectUrl);
+    
   } catch (error) {
-    console.error("Google OAuth error:", error);
+    console.error('❌ Google OAuth callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_failed`);
   }
 };
@@ -149,6 +164,54 @@ exports.forgotPassword = async (req, res) => {
       message:
         "If an account exists with this email, you will receive a password reset link.",
     });
+  }
+};
+
+// ==================== GOOGLE MOBILE/SPA LOGIN ====================
+
+exports.googleMobileLogin = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    
+    if (!idToken) {
+      return res.status(400).json({ error: 'ID token is required' });
+    }
+
+    const deviceInfo = {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+    };
+
+    // Verify the token
+    const payload = await googleService.verifyToken(idToken);
+    
+    const profile = {
+      id: payload.sub,
+      email: payload.email,
+      displayName: payload.name,
+      name: {
+        givenName: payload.given_name,
+        familyName: payload.family_name
+      },
+      photos: [{ value: payload.picture }]
+    };
+
+    const result = await authService.handleGoogleAuth(profile, deviceInfo);
+
+    res.json({
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      user: {
+        id: result.user._id,
+        email: result.user.email,
+        username: result.user.username,
+        profile: result.user.profile
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Google mobile login error:', error);
+    res.status(401).json({ error: 'Google authentication failed' });
   }
 };
 
