@@ -146,6 +146,14 @@ if (typeof authController.googleCallback === 'function') {
   console.error('❌ authController.googleCallback is not a function');
 }
 
+// Google mobile/SPA login (token-based)
+if (typeof authController.googleMobileLogin === 'function') {
+  router.post('/google/login', authController.googleMobileLogin);
+  console.log('✅ Registered /google/login');
+} else {
+  console.error('❌ authController.googleMobileLogin is not a function');
+}
+
 // ==================== PASSWORD MANAGEMENT ====================
 if (typeof passwordResetLimiter === 'function' && Array.isArray(validateLoginEmail) && typeof authController.forgotPassword === 'function') {
   router.post('/forgot-password', passwordResetLimiter, validateLoginEmail, authController.forgotPassword);

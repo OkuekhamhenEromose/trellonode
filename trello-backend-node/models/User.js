@@ -13,7 +13,10 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true,
+    required: function() {
+      // Password is required only for non-Google users
+      return !this.googleId;
+    },
     minlength: 8,
     select: false
   },
@@ -21,6 +24,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     unique: true,
     sparse: true
+  },
+  googleId: {  // ✅ ADD THIS FIELD
+    type: String,
+    sparse: true,
+    index: true
   },
   profile: {
     fullname: { type: String, trim: true },

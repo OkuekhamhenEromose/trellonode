@@ -164,23 +164,31 @@ class AuthService {
     });
 
     if (!user) {
+      // Generate unique username
+    let username = profile.email.split('@')[0];
+    let counter = 1;
+    while (await User.findOne({ username })) {
+      username = `${profile.email.split('@')[0]}${counter}`;
+      counter++;
+    }
       user = await User.create({
         email: profile.email,
         googleId: profile.id,
-        username:
-          profile.email.split("@")[0] + Math.floor(Math.random() * 1000),
+        username: username,
+
         profile: {
           fullname: profile.displayName || profile.name?.givenName,
-          avatar: profile.photos?.[0]?.value,
+          avatar: profile.photos?.[0]?.value || '',
         },
         isEmailVerified: true,
         isActive: true,
       });
-    } else if (!user.googleId) {
+      console.log('✅ New user created via Google OAuth:', user.email);
+    }
+    else if (!user.googleId) {
       user.googleId = profile.id;
       await user.save();
     }
-
     user.lastLogin = new Date();
     await user.save();
 
@@ -191,7 +199,12 @@ class AuthService {
       deviceInfo,
     );
 
-    return { accessToken, refreshToken, user };
+    return { accessToken, refreshToken, user: {
+      id: user._id,
+      email: user.email,
+      username: user.username,
+      profile: user.profile,     
+    } };
   }
 }
 
