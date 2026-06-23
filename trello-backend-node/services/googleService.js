@@ -1,5 +1,4 @@
-// services/googleService.js - UPDATED
-
+// services/googleService.js
 const { OAuth2Client } = require('google-auth-library');
 const authService = require('./authService');
 
@@ -7,16 +6,25 @@ class GoogleService {
   constructor() {
     console.log('🔑 GoogleService initializing...');
     
-    // ✅ Check for credentials
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    // Check for credentials
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const backendUrl = process.env.BACKEND_URL;
+
+    if (!clientId || !clientSecret) {
       console.warn('⚠️ Google OAuth credentials not found!');
       console.warn('  Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env');
     }
 
+    if (!backendUrl) {
+      console.warn('⚠️ BACKEND_URL not set!');
+      console.warn('  Add BACKEND_URL to .env');
+    }
+
     this.client = new OAuth2Client(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      `${process.env.BACKEND_URL}/api/auth/google/callback`
+      clientId,
+      clientSecret,
+      `${backendUrl || 'http://localhost:5000'}/api/auth/google/callback`
     );
     
     console.log('✅ GoogleService initialized');
@@ -40,7 +48,6 @@ class GoogleService {
       const { tokens } = await this.client.getToken(code);
       console.log('✅ Tokens received from Google');
       
-      // Verify the token
       const ticket = await this.client.verifyIdToken({
         idToken: tokens.id_token,
         audience: process.env.GOOGLE_CLIENT_ID

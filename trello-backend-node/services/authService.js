@@ -11,42 +11,41 @@ class AuthService {
     return { exists: !!user };
   }
 
- async authenticatePassword(email, password) {
-  console.log("🔐 authService.authenticatePassword called for:", email);
+  async authenticatePassword(email, password) {
+    console.log("🔐 authService.authenticatePassword called for:", email);
 
-  const user = await User.findOne({ email }).select(
-    "+password +loginAttempts +lockUntil",
-  );
+    const user = await User.findOne({ email }).select(
+      "+password +loginAttempts +lockUntil",
+    );
 
-  if (!user) {
-    console.log("❌ User not found in authService:", email);
-    throw new Error("Invalid credentials");
+    if (!user) {
+      console.log("❌ User not found in authService:", email);
+      throw new Error("Invalid credentials");
+    }
+
+    console.log("✅ User found in authService, comparing password...");
+
+    const isValid = await user.comparePassword(password);
+
+    if (!isValid) {
+      console.log("❌ Password invalid for user:", email);
+      throw new Error("Invalid credentials");
+    }
+
+    console.log("✅ Password valid for user:", email);
+
+    // Generate and send 2FA token - FIXED
+    const loginToken = await tokenService.generateLoginToken(user._id);
+    console.log("✅ Generated login token:", loginToken);
+
+    await emailService.sendLoginToken(email, loginToken);
+    console.log("✅ Login token email sent to:", email);
+
+    return {
+      nextStep: "token-verification",
+      userId: user._id,
+    };
   }
-
-  console.log("✅ User found in authService, comparing password...");
-
-  const isValid = await user.comparePassword(password);
-
-  if (!isValid) {
-    console.log("❌ Password invalid for user:", email);
-    throw new Error("Invalid credentials");
-  }
-
-  console.log("✅ Password valid for user:", email);
-
-  // Generate and send 2FA token - FIXED
-  const loginToken = await tokenService.generateLoginToken(user._id);
-  console.log("✅ Generated login token:", loginToken);
-  
- 
-  await emailService.sendLoginToken(email, loginToken)
-  console.log("✅ Login token email sent to:", email);
-
-  return {
-    nextStep: "token-verification",
-    userId: user._id,
-  };
-}
 
   async verifyLoginToken(email, token, rememberMe = false, deviceInfo = {}) {
     const user = await User.findOne({ email });
@@ -159,36 +158,42 @@ class AuthService {
   }
 
   async handleGoogleAuth(profile, deviceInfo = {}) {
+    console.log("🔄 Handling Google auth for:", profile.email);
+
     let user = await User.findOne({
       $or: [{ email: profile.email }, { googleId: profile.id }],
     });
 
     if (!user) {
+      console.log("📝 Creating new user from Google profile...");
+
       // Generate unique username
-    let username = profile.email.split('@')[0];
-    let counter = 1;
-    while (await User.findOne({ username })) {
-      username = `${profile.email.split('@')[0]}${counter}`;
-      counter++;
-    }
+      let username = profile.email.split("@")[0];
+      let counter = 1;
+      while (await User.findOne({ username })) {
+        username = `${profile.email.split("@")[0]}${counter}`;
+        counter++;
+      }
+
       user = await User.create({
         email: profile.email,
         googleId: profile.id,
         username: username,
-
         profile: {
-          fullname: profile.displayName || profile.name?.givenName,
-          avatar: profile.photos?.[0]?.value || '',
+          fullname: profile.displayName || profile.name?.givenName || "",
+          avatar: profile.photos?.[0]?.value || "",
         },
         isEmailVerified: true,
         isActive: true,
       });
-      console.log('✅ New user created via Google OAuth:', user.email);
-    }
-    else if (!user.googleId) {
+      console.log("✅ New user created:", user._id);
+    } else if (!user.googleId) {
+      console.log("📝 Linking Google account to existing user...");
       user.googleId = profile.id;
       await user.save();
+      console.log("✅ Google account linked");
     }
+
     user.lastLogin = new Date();
     await user.save();
 
@@ -199,12 +204,18 @@ class AuthService {
       deviceInfo,
     );
 
-    return { accessToken, refreshToken, user: {
-      id: user._id,
-      email: user.email,
-      username: user.username,
-      profile: user.profile,     
-    } };
+    console.log("✅ Google auth successful for:", user.email);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        profile: user.profile,
+      },
+    };
   }
 }
 
