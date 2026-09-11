@@ -1,27 +1,46 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const {secret} = require('../config/jwt');
+const { secret } = require('../config/jwt');
 
 const auth = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const header = req.get('Authorization');
+    const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : null;
 
     if (!token) {
-      throw new Error();
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Authentication required.' },
+      });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    const user = await User.findById(decoded.userId);
+    const decoded = jwt.verify(token, secret);
+    if (!decoded?.userId) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Invalid authentication token.' },
+      });
+    }
 
+    const user = await User.findById(decoded.userId);
     if (!user) {
-      throw new Error();
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Authenticated user not found.' },
+      });
     }
 
     req.user = user;
     req.token = token;
     next();
   } catch (error) {
-    res.status(401).json({ error: 'Please authenticate' });
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: error.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'UNAUTHORIZED',
+        message: 'Authentication required.',
+      },
+    });
   }
 };
 

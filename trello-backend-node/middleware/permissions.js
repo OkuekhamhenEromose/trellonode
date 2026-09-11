@@ -1,4 +1,5 @@
 const Board = require('../models/Board');
+const List = require('../models/List');
 
 const isBoardMember = async (req, res, next) => {
   try {
