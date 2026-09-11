@@ -41,12 +41,5 @@ router.delete('/:id',
   listController.deleteList
 );
 
-// Reorder lists
-router.put('/board/:boardId/reorder', 
-  auth, 
-  validateReorderLists,
-  validate,
-  listController.reorderLists
-);
 
 module.exports = router;
