@@ -148,7 +148,7 @@ exports.createList = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${boardDoc._id}`).emit('list_created', list);
+    io.to(`board:${boardDoc._id}`).emit('list_created', list);
     
     res.status(201).json(list);
   } catch (error) {
@@ -197,7 +197,7 @@ exports.updateList = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('list_updated', updatedList);
+    io.to(`board:${board._id}`).emit('list_updated', updatedList);
     
     res.status(200).json(updatedList);
   } catch (error) {
@@ -232,7 +232,7 @@ exports.deleteList = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${list.board._id}`).emit('list_deleted', { listId: list._id });
+    io.to(`board:${list.board._id}`).emit('list_deleted', { listId: list._id });
     
     res.status(200).json({ message: 'List deleted successfully' });
   } catch (error) {

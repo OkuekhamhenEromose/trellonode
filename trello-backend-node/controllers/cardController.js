@@ -156,7 +156,7 @@ exports.createCard = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('card_created', card);
+    io.to(`board:${board._id}`).emit('card_created', card);
     
     const populatedCard = await Card.findById(card._id)
       .populate('members', 'username email profile.fullname')
@@ -227,7 +227,7 @@ exports.updateCard = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('card_updated', updatedCard);
+    io.to(`board:${board._id}`).emit('card_updated', updatedCard);
     
     res.status(200).json(updatedCard);
   } catch (error) {
@@ -286,12 +286,12 @@ exports.moveCard = async (req, res) => {
       
       // Emit socket events to both boards
       const io = req.app.get('io');
-      io.to(`board-${oldBoard._id}`).emit('card_moved', {
+      io.to(`board:${oldBoard._id}`).emit('card_moved', {
         cardId: card._id,
         fromList: oldList._id,
         toList: newList._id
       });
-      io.to(`board-${newBoard._id}`).emit('card_moved', {
+      io.to(`board:${newBoard._id}`).emit('card_moved', {
         cardId: card._id,
         fromList: oldList._id,
         toList: newList._id
@@ -314,7 +314,7 @@ exports.moveCard = async (req, res) => {
       
       // Emit socket event
       const io = req.app.get('io');
-      io.to(`board-${list.board._id}`).emit('card_reordered', {
+      io.to(`board:${list.board._id}`).emit('card_reordered', {
         cardId: card._id,
         listId: list._id,
         position

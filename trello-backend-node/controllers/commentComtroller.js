@@ -45,7 +45,7 @@ exports.createComment = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('comment_created', comment);
+    io.to(`board:${board._id}`).emit('comment_created', comment);
     
     const populatedComment = await Comment.findById(comment._id)
       .populate('author', 'username email profile.fullname');
@@ -122,7 +122,7 @@ exports.deleteComment = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('comment_deleted', { commentId: comment._id });
+    io.to(`board:${board._id}`).emit('comment_deleted', { commentId: comment._id });
     
     res.status(200).json({ message: 'Comment deleted successfully' });
   } catch (error) {

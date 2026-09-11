@@ -122,7 +122,7 @@ exports.createBoard = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('board_created', board);
+    io.to(`board:${board._id}`).emit('board_created', board);
     
     res.status(201).json(board);
   } catch (error) {
@@ -169,7 +169,7 @@ exports.updateBoard = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('board_updated', updatedBoard);
+    io.to(`board:${board._id}`).emit('board_updated', updatedBoard);
     
     res.status(200).json(updatedBoard);
   } catch (error) {
@@ -205,7 +205,7 @@ exports.archiveBoard = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('board_archived', board);
+    io.to(`board:${board._id}`).emit('board_archived', board);
     
     res.status(200).json({ message: 'Board archived successfully' });
   } catch (error) {
@@ -254,7 +254,7 @@ exports.reorderLists = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`board-${board._id}`).emit('lists_reordered', { boardId: board._id, lists });
+    io.to(`board:${board._id}`).emit('lists_reordered', { boardId: board._id, lists });
     
     res.status(200).json({ message: 'Lists reordered successfully' });
   } catch (error) {
