@@ -1,5 +1,11 @@
+const config = require('./env');
+
+if (!config.jwtSecret) {
+  throw new Error('JWT_SECRET is required. Refusing to start without a JWT secret.');
+}
+
 module.exports = {
-  secret: process.env.JWT_SECRET || 'bf43a801052f9159769c50bba7284e368143c310b92ced0809607f1aa7476674',
-  accessExpiration: '1d',
-  refreshExpiration: '7d',
+  secret: config.jwtSecret,
+  accessExpiration: process.env.JWT_ACCESS_EXPIRES_IN || process.env.JWT_EXPIRES_IN || '1d',
+  refreshExpiration: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
 };
