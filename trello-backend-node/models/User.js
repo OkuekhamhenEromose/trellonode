@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-console.log('🆕 NEW User.js file loaded for Mongoose 9.x');
+// console.log('🆕 NEW User.js file loaded for Mongoose 9.x');
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -49,27 +49,21 @@ const userSchema = new mongoose.Schema({
 
 // CORRECT pre-save middleware for Mongoose 9.x - WITHOUT next parameter
 userSchema.pre('save', async function() {
-  console.log('📝 Pre-save middleware running for user:', this.email);
-  
+
   const user = this;
-  
+
   if (!user.isModified('password')) {
-    console.log('🔑 Password not modified, skipping hash');
     return; // Just return, don't call next()
   }
-  
-  console.log('🔑 Hashing password...');
-  
+
   try {
     // Use async/await with bcrypt
     const salt = await bcrypt.genSalt(10);
     const hash = await bcrypt.hash(user.password, salt);
-    
-    console.log('✅ Password hashed successfully');
+
     user.password = hash;
     // Don't call next() - just return
   } catch (error) {
-    console.error('❌ Password hashing error:', error);
     throw error; // Throw the error instead of calling next(error)
   }
 });
@@ -77,10 +71,8 @@ userSchema.pre('save', async function() {
 // Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword) {
   try {
-    console.log('🔍 Comparing password...');
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
-    console.error('❌ Password comparison error:', error);
     throw error;
   }
 };
@@ -93,5 +85,4 @@ if (mongoose.models.User) {
 }
 
 const User = mongoose.model('User', userSchema);
-console.log('✅ NEW User model compiled successfully for Mongoose 9.x');
 module.exports = User;

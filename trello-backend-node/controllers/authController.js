@@ -1,20 +1,39 @@
 const authService = require("../services/authService");
 const googleService = require("../services/googleService");
 const tokenService = require("../services/tokenService");
-
 const User = require("../models/User");
 const TemporaryRegistration = require("../models/TemporaryRegistration");
-const EmailVerificationToken = require("../models/EmailVerificationToken");
 const { v4: uuidv4 } = require("uuid");
 const { sendVerificationEmail } = require("../utils/email");
-const jwt = require("jsonwebtoken");
-const RefreshToken = require("../models/RefreshToken");
 
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "1d",
+const REFRESH_COOKIE = "refreshToken";
+const REFRESH_COOKIE_PATH = "/api/v1/auth";
+
+const getRefreshToken = (req) => {
+  const cookies = req.headers.cookie || "";
+  const match = cookies.match(/(?:^|;\s*)refreshToken=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
+const setRefreshCookie = (res, token, rememberMe = false) => {
+  res.cookie(REFRESH_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: REFRESH_COOKIE_PATH,
+    maxAge: (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000,
   });
 };
+
+const clearRefreshCookie = (res) => {
+  res.clearCookie(REFRESH_COOKIE, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: REFRESH_COOKIE_PATH,
+  });
+};
+
 // ==================== LOGIN FLOW CONTROLLERS ====================
 
 exports.loginEmail = async (req, res) => {
@@ -63,12 +82,7 @@ exports.loginVerifyToken = async (req, res) => {
       deviceInfo,
     );
 
-    res.cookie("refreshToken", result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000,
-    });
+    setRefreshCookie(res, result.refreshToken, rememberMe);
 
     res.json({
       accessToken: result.accessToken,
@@ -83,19 +97,33 @@ exports.loginVerifyToken = async (req, res) => {
 
 exports.refreshToken = async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken;
+    const refreshToken = getRefreshToken(req);
     if (!refreshToken) {
-      return res.status(401).json({ error: "No refresh token provided" });
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "REFRESH_TOKEN_MISSING",
+          message: "Authentication required.",
+        },
+      });
     }
 
     const result = await authService.refreshAccessToken(refreshToken);
+    setRefreshCookie(res, result.refreshToken);
 
-    res.json({
+    return res.json({
       accessToken: result.accessToken,
       user: result.user,
     });
   } catch (error) {
-    res.status(401).json({ error: error.message });
+    clearRefreshCookie(res);
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: "REFRESH_TOKEN_INVALID",
+        message: "Authentication required.",
+      },
+    });
   }
 };
 
@@ -103,11 +131,9 @@ exports.refreshToken = async (req, res) => {
 
 exports.googleAuth = (req, res) => {
   try {
-    console.log('🔑 Google OAuth initiated');
     const url = googleService.getAuthUrl();
     res.redirect(url);
   } catch (error) {
-    console.error('❌ Google OAuth error:', error);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_init_failed`);
   }
 };
@@ -115,35 +141,26 @@ exports.googleAuth = (req, res) => {
 exports.googleCallback = async (req, res) => {
   try {
     const { code } = req.query;
-    console.log('🔄 Google OAuth callback received');
-
     if (!code) {
-      console.error('❌ No authorization code received');
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=no_auth_code`);
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/login?error=no_auth_code`,
+      );
     }
 
     const deviceInfo = {
       ip: req.ip,
-      userAgent: req.get('User-Agent'),
+      userAgent: req.get("User-Agent"),
     };
 
     const result = await googleService.handleCallback(code, deviceInfo);
 
     // Set refresh token cookie
-    res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
+    setRefreshCookie(res, result.refreshToken, true);
 
     // Redirect to frontend with token
     const redirectUrl = `${process.env.FRONTEND_URL}/oauth-callback?token=${result.accessToken}`;
-    console.log('✅ Google OAuth successful, redirecting to:', redirectUrl);
     res.redirect(redirectUrl);
-    
   } catch (error) {
-    console.error('❌ Google OAuth callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_failed`);
   }
 };
@@ -172,28 +189,28 @@ exports.forgotPassword = async (req, res) => {
 exports.googleMobileLogin = async (req, res) => {
   try {
     const { idToken } = req.body;
-    
+
     if (!idToken) {
-      return res.status(400).json({ error: 'ID token is required' });
+      return res.status(400).json({ error: "ID token is required" });
     }
 
     const deviceInfo = {
       ip: req.ip,
-      userAgent: req.get('User-Agent'),
+      userAgent: req.get("User-Agent"),
     };
 
     // Verify the token
     const payload = await googleService.verifyToken(idToken);
-    
+
     const profile = {
       id: payload.sub,
       email: payload.email,
       displayName: payload.name,
       name: {
         givenName: payload.given_name,
-        familyName: payload.family_name
+        familyName: payload.family_name,
       },
-      photos: [{ value: payload.picture }]
+      photos: [{ value: payload.picture }],
     };
 
     const result = await authService.handleGoogleAuth(profile, deviceInfo);
@@ -205,13 +222,11 @@ exports.googleMobileLogin = async (req, res) => {
         id: result.user._id,
         email: result.user.email,
         username: result.user.username,
-        profile: result.user.profile
-      }
+        profile: result.user.profile,
+      },
     });
-    
   } catch (error) {
-    console.error('❌ Google mobile login error:', error);
-    res.status(401).json({ error: 'Google authentication failed' });
+    res.status(401).json({ error: "Google authentication failed" });
   }
 };
 
@@ -228,12 +243,8 @@ exports.resetPassword = async (req, res) => {
 
 // ==================== EXISTING CONTROLLERS ====================
 exports.startRegistration = async (req, res) => {
-  console.log("🔥 START REGISTRATION CALLED");
-
   try {
     const { email } = req.body;
-    console.log("Email:", email);
-
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
     }
@@ -267,9 +278,6 @@ exports.startRegistration = async (req, res) => {
 
     // Send verification email
     await sendVerificationEmail(email, verificationCode, token);
-
-    console.log("✅ Verification email sent to:", email);
-
     res.status(200).json({
       message: "Verification email sent",
       email,
@@ -277,15 +285,11 @@ exports.startRegistration = async (req, res) => {
       expiresAt,
     });
   } catch (error) {
-    console.error("❌ Error:", error);
     res.status(500).json({ error: "Registration failed" });
   }
 };
 
 exports.verifyEmail = async (req, res) => {
-  console.log("🔍 VERIFY EMAIL CALLED");
-  console.log("Request body:", req.body);
-
   try {
     const { email, token } = req.body;
 
@@ -310,9 +314,6 @@ exports.verifyEmail = async (req, res) => {
     // Mark as verified
     tempReg.isVerified = true;
     await tempReg.save();
-
-    console.log("✅ Email verified successfully for:", email);
-
     res.json({
       message: "Email verified successfully",
       email,
@@ -320,7 +321,6 @@ exports.verifyEmail = async (req, res) => {
       token: tempReg.token,
     });
   } catch (error) {
-    console.error("❌ Verify email error:", error);
     res.status(500).json({ error: "Verification failed" });
   }
 };
@@ -328,72 +328,53 @@ exports.verifyEmail = async (req, res) => {
 exports.completeRegistration = async (req, res) => {
   try {
     const { email, token, fullname, username, password, password2 } = req.body;
-    
-    console.log("📝 COMPLETE REGISTRATION CALLED");
-    console.log("Email:", email);
-    console.log("Username:", username);
-    console.log("Fullname:", fullname);
-    console.log("Password length:", password?.length);
-    console.log("Token:", token);
-    
     // Check validation
     if (!email || !token || !fullname || !username || !password || !password2) {
-      console.log("❌ Missing required fields");
-      return res.status(400).json({ 
-        error: 'Missing required fields',
-        errors: [{ msg: 'All fields are required' }]
+      return res.status(400).json({
+        error: "Missing required fields",
+        errors: [{ msg: "All fields are required" }],
       });
     }
-    
+
     if (password !== password2) {
-      console.log("❌ Passwords do not match");
-      return res.status(400).json({ 
-        error: 'Password validation failed',
-        errors: [{ msg: 'Passwords do not match' }]
+      return res.status(400).json({
+        error: "Password validation failed",
+        errors: [{ msg: "Passwords do not match" }],
       });
     }
-    
+
     // Check if user already exists
-    console.log("🔍 Checking if user exists...");
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      console.log("❌ Email already registered:", email);
-      return res.status(400).json({ 
-        error: 'Email already registered',
-        errors: [{ msg: 'This email is already registered' }]
+      return res.status(400).json({
+        error: "Email already registered",
+        errors: [{ msg: "This email is already registered" }],
       });
     }
-    
+
     // Check username
-    console.log("🔍 Checking if username exists...");
     const existingUsername = await User.findOne({ username });
     if (existingUsername) {
-      console.log("❌ Username already taken:", username);
-      return res.status(400).json({ 
-        error: 'Username taken',
-        errors: [{ msg: 'This username is already taken' }]
+      return res.status(400).json({
+        error: "Username taken",
+        errors: [{ msg: "This username is already taken" }],
       });
     }
-    
+
     // Verify token
-    console.log("🔍 Verifying token...");
     const tempReg = await TemporaryRegistration.findOne({
       email,
       token,
       expiresAt: { $gt: new Date() },
-      isVerified: true
+      isVerified: true,
     });
-    
+
     if (!tempReg) {
-      console.log("❌ Invalid or expired verification token");
-      return res.status(400).json({ 
-        error: 'Invalid token',
-        errors: [{ msg: 'Invalid or expired verification token' }]
+      return res.status(400).json({
+        error: "Invalid token",
+        errors: [{ msg: "Invalid or expired verification token" }],
       });
     }
-    
-    console.log("✅ Token verified, creating user...");
-    
     // Create user instance
     const user = new User({
       username,
@@ -401,61 +382,57 @@ exports.completeRegistration = async (req, res) => {
       password,
       profile: { fullname },
       isActive: true,
-      isEmailVerified: true
+      isEmailVerified: true,
     });
-    
+
     // Save the user - THIS WILL TRIGGER THE PRE-SAVE MIDDLEWARE
     await user.save();
-    
-    console.log("✅ User created:", user._id);
-    
     // Delete temp registration (don't await - let it run in background)
     TemporaryRegistration.findByIdAndDelete(tempReg._id)
-      .then(() => console.log('✅ Temp registration deleted'))
-      .catch(err => console.error('⚠️ Error deleting temp registration:', err));
-    
-    // Generate token
-    const accessToken = generateToken(user._id);
-    
-    console.log("✅ Registration complete, sending response");
-    
+      .then(() => console.log("✅ Temp registration deleted"))
+      .catch((err) =>
+        console.error("⚠️ Error deleting temp registration:", err),
+      );
+
+    // Issue an access token in the response and a refresh token in an HttpOnly cookie.
+    const accessToken = tokenService.generateAccessToken(user._id);
+    const refreshToken = await tokenService.generateRefreshToken(
+      user._id,
+      false,
+      { ip: req.ip, userAgent: req.get("User-Agent") },
+    );
+    setRefreshCookie(res, refreshToken, false);
     return res.status(201).json({
-      message: 'Registration completed successfully',
+      message: "Registration completed successfully",
       user: {
         id: user._id,
         username: user.username,
         email: user.email,
-        profile: user.profile
+        profile: user.profile,
       },
-      token: accessToken
+      token: accessToken,
     });
-    
   } catch (error) {
-    console.error('❌ COMPLETE REGISTRATION ERROR:');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    
     // Check if it's a Mongoose validation error
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({ 
-        error: 'Validation failed',
-        errors: Object.values(error.errors).map(e => ({ msg: e.message }))
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        error: "Validation failed",
+        errors: Object.values(error.errors).map((e) => ({ msg: e.message })),
       });
     }
-    
+
     // Check if it's a duplicate key error
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
-      return res.status(400).json({ 
-        error: 'Duplicate field',
-        errors: [{ msg: `${field} already exists` }]
+      return res.status(400).json({
+        error: "Duplicate field",
+        errors: [{ msg: `${field} already exists` }],
       });
     }
-    
-    res.status(500).json({ 
-      error: 'Registration failed',
-      message: error.message 
+
+    res.status(500).json({
+      error: "Registration failed",
+      message: error.message,
     });
   }
 };
@@ -464,110 +441,71 @@ exports.completeRegistration = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
-    console.log("🔐 LOGIN ATTEMPT for email:", email);
-    
     if (!email || !password) {
-      console.log("❌ Missing email or password");
-      return res.status(400).json({ error: 'Email and password are required' });
+      return res.status(400).json({ error: "Email and password are required" });
     }
-    
+
     // Find user by email and include password field
-    const user = await User.findOne({ email }).select('+password');
-    
+    const user = await User.findOne({ email }).select("+password");
+
     if (!user) {
-      console.log("❌ User not found:", email);
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
-    
-    console.log("✅ User found, comparing password...");
-    
     // Compare password
     const isMatch = await user.comparePassword(password);
-    
+
     if (!isMatch) {
-      console.log("❌ Password mismatch for user:", email);
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
-    
-    console.log("✅ Password matched for user:", email);
-    
-    // Generate token
-    const token = generateToken(user._id);
-    
-    console.log("✅ Login successful for:", email);
-    
+    // Legacy direct-login route: preserve compatibility while issuing a secure refresh cookie.
+    const token = tokenService.generateAccessToken(user._id);
+    const refreshToken = await tokenService.generateRefreshToken(
+      user._id,
+      false,
+      { ip: req.ip, userAgent: req.get("User-Agent") },
+    );
+    setRefreshCookie(res, refreshToken, false);
     res.json({
-      message: 'Login successful',
+      message: "Login successful",
       token,
       user: {
         id: user._id,
         email: user.email,
         username: user.username,
-        profile: user.profile
-      }
+        profile: user.profile,
+      },
     });
-    
   } catch (error) {
-    console.error('❌ Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
+    res.status(500).json({ error: "Login failed" });
   }
 };
 
 // Update the logout function
 exports.logout = async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken;
-
-    if (refreshToken) {
-      // Mark token as revoked instead of deleting (for audit)
-      await RefreshToken.findOneAndUpdate(
-        { token: refreshToken },
-        { revoked: true },
-      );
-    }
-
-    // Clear the cookie
-    res.clearCookie("refreshToken", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-    });
-
-    // Also clear any session data if using sessions
-    if (req.session) {
-      req.session.destroy();
-    }
-
-    res.status(200).json({
-      message: "Logout successful",
-      redirect: "/login",
-    });
+    await authService.logout(getRefreshToken(req));
+    clearRefreshCookie(res);
+    return res.status(200).json({ message: "Logout successful" });
   } catch (error) {
-    console.error("Logout error:", error);
-    res.status(500).json({ error: "Logout failed" });
+    clearRefreshCookie(res);
+    return res.status(200).json({ message: "Logout successful" });
   }
 };
 
 // Add a logout from all devices function
 exports.logoutAll = async (req, res) => {
   try {
-    const userId = req.user._id;
-
-    // Revoke all refresh tokens for this user
-    await RefreshToken.updateMany(
-      { userId, revoked: false },
-      { revoked: true },
-    );
-
-    res.clearCookie("refreshToken");
-
-    res.status(200).json({
-      message: "Logged out from all devices",
-    });
+    await authService.logoutAll(req.user._id);
+    clearRefreshCookie(res);
+    return res.status(200).json({ message: "Logged out from all devices" });
   } catch (error) {
-    console.error("Logout all error:", error);
-    res.status(500).json({ error: "Logout from all devices failed" });
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: "LOGOUT_ALL_FAILED",
+        message: "Unable to log out from all devices.",
+      },
+    });
   }
 };
 
@@ -590,7 +528,6 @@ exports.getProfile = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get profile error:", error);
     res.status(500).json({ error: "Failed to get profile" });
   }
 };
@@ -599,7 +536,6 @@ exports.updateProfile = async (req, res) => {
   try {
     // ... your existing update profile code
   } catch (error) {
-    console.error("Update profile error:", error);
     res.status(500).json({ error: "Failed to update profile" });
   }
 };
@@ -620,11 +556,6 @@ exports.checkEmail = async (req, res) => {
       exists: emailExists,
     });
   } catch (error) {
-    console.error("Check email error:", error);
     res.status(500).json({ error: "Failed to check email" });
   }
 };
-console.log(
-  "✅ authController loaded with functions:",
-  Object.keys(module.exports),
-);
