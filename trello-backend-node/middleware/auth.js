@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { secret } = require('../config/jwt');
+const { secret, issuer, audience } = require('../config/jwt');
 
 const auth = async (req, res, next) => {
   try {
@@ -10,34 +10,34 @@ const auth = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Authentication required.' },
+        error: { code: 'AUTH_TOKEN_MISSING', message: 'Authentication required.' },
       });
     }
 
-    const decoded = jwt.verify(token, secret);
-    if (!decoded?.userId) {
+    const decoded = jwt.verify(token, secret, { issuer, audience });
+    if (decoded?.type !== 'access' || !decoded?.userId) {
       return res.status(401).json({
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Invalid authentication token.' },
+        error: { code: 'AUTH_TOKEN_INVALID', message: 'Invalid authentication token.' },
       });
     }
 
     const user = await User.findById(decoded.userId);
-    if (!user) {
+    if (!user || !user.isActive) {
       return res.status(401).json({
         success: false,
-        error: { code: 'UNAUTHORIZED', message: 'Authenticated user not found.' },
+        error: { code: 'AUTH_USER_INACTIVE', message: 'Authenticated user is inactive.' },
       });
     }
 
     req.user = user;
     req.token = token;
-    next();
+    return next();
   } catch (error) {
     return res.status(401).json({
       success: false,
       error: {
-        code: error.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'UNAUTHORIZED',
+        code: error.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'AUTH_TOKEN_INVALID',
         message: 'Authentication required.',
       },
     });

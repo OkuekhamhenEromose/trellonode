@@ -3,32 +3,58 @@ const mongoose = require('mongoose');
 const refreshTokenSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: "User",
     required: true,
-    index: true
+    index: true,
   },
-  token: {
+  // Raw refresh tokens are never persisted. This field contains a SHA-256 digest.
+  tokenHash: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    sparse: true,
+    select: false,
+  },
+  familyId: {
+    type: String,
+    required: true,
+    index: true,
   },
   expiresAt: {
     type: Date,
-    required: true
+    required: true,
+  },
+  replacedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "RefreshToken",
+    default: null,
+  },
+  userAgent: String,
+  ipAddress: String,
+  // Kept for a compatibility read path while existing sessions migrate.
+  // New tokens must never populate this field.
+  token: {
+    type: String,
+    select: false,
   },
   deviceInfo: {
     ip: String,
     userAgent: String,
-    location: String
+    location: String,
   },
   revoked: {
     type: Boolean,
-    default: false
+    default: false,
+    index: true,
+  },
+  revokedAt: {
+    type: Date,
+    default: null,
   },
   createdAt: {
     type: Date,
-    default: Date.now
-  }
+    default: Date.now,
+  },
 });
 
 // Auto-delete expired tokens
