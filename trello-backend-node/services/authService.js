@@ -1,9 +1,7 @@
 const User = require("../models/User");
-const Token = require("../models/Token");
 const RefreshToken = require("../models/RefreshToken");
 const tokenService = require("./tokenService");
 const emailService = require("./emailService");
-const bcrypt = require("bcryptjs");
 
 class AuthService {
   async validateEmail(email) {
@@ -12,50 +10,31 @@ class AuthService {
   }
 
   async authenticatePassword(email, password) {
-    console.log("🔐 authService.authenticatePassword called for:", email);
+    const user = await User.findOne({ email }).select("+password");
 
-    const user = await User.findOne({ email }).select(
-      "+password +loginAttempts +lockUntil",
-    );
-
-    if (!user) {
-      console.log("❌ User not found in authService:", email);
+    if (!user || !user.isActive) {
       throw new Error("Invalid credentials");
     }
-
-    console.log("✅ User found in authService, comparing password...");
 
     const isValid = await user.comparePassword(password);
-
     if (!isValid) {
-      console.log("❌ Password invalid for user:", email);
       throw new Error("Invalid credentials");
     }
 
-    console.log("✅ Password valid for user:", email);
-
-    // Generate and send 2FA token - FIXED
     const loginToken = await tokenService.generateLoginToken(user._id);
-    console.log("✅ Generated login token:", loginToken);
-
     await emailService.sendLoginToken(email, loginToken);
-    console.log("✅ Login token email sent to:", email);
 
-    return {
-      nextStep: "token-verification",
-      userId: user._id,
-    };
+    return { nextStep: "token-verification", userId: user._id };
   }
 
   async verifyLoginToken(email, token, rememberMe = false, deviceInfo = {}) {
     const user = await User.findOne({ email });
 
-    if (!user) {
+    if (!user || !user.isActive) {
       throw new Error("Invalid token");
     }
 
     const isValid = await tokenService.verifyLoginToken(user._id, token);
-
     if (!isValid) {
       throw new Error("Invalid or expired token");
     }
@@ -64,7 +43,6 @@ class AuthService {
     user.isEmailVerified = true;
     await user.save();
 
-    // Generate token pair
     const accessToken = tokenService.generateAccessToken(user._id, rememberMe);
     const refreshToken = await tokenService.generateRefreshToken(
       user._id,
@@ -75,60 +53,39 @@ class AuthService {
     return {
       accessToken,
       refreshToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        profile: user.profile,
-        role: user.role,
-      },
+      user: tokenService.publicUser(user),
     };
   }
 
   async refreshAccessToken(refreshTokenString) {
-    const token = await RefreshToken.findOne({
-      token: refreshTokenString,
-      expiresAt: { $gt: new Date() },
-      revoked: false,
-    });
-
-    if (!token) {
-      throw new Error("Invalid refresh token");
-    }
-
-    const user = await User.findById(token.userId);
+    const rotated = await tokenService.rotateRefreshToken(refreshTokenString);
+    const user = await User.findById(rotated.userId);
 
     if (!user || !user.isActive) {
+      await tokenService.revokeTokenFamily(rotated.familyId);
       throw new Error("User not found or inactive");
     }
 
-    const newAccessToken = tokenService.generateAccessToken(user._id);
-
     return {
-      accessToken: newAccessToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        profile: user.profile,
-        role: user.role,
-      },
+      accessToken: tokenService.generateAccessToken(user._id),
+      refreshToken: rotated.refreshToken,
+      user: tokenService.publicUser(user),
     };
   }
 
   async logout(refreshTokenString) {
     if (refreshTokenString) {
-      await RefreshToken.findOneAndUpdate(
-        { token: refreshTokenString },
-        { revoked: true },
-      );
+      await tokenService.revokeRefreshToken(refreshTokenString);
     }
+  }
+
+  async logoutAll(userId) {
+    await tokenService.revokeAllUserTokens(userId);
   }
 
   async forgotPassword(email) {
     const user = await User.findOne({ email });
-
-    if (!user) return; // Don't reveal if user exists
+    if (!user || !user.isActive) return;
 
     const resetToken = await tokenService.generatePasswordResetToken(user._id);
     await emailService.sendPasswordResetEmail(email, resetToken);
@@ -136,49 +93,38 @@ class AuthService {
 
   async resetPassword(token, newPassword) {
     const resetToken = await tokenService.verifyPasswordResetToken(token);
-
-    if (!resetToken) {
-      throw new Error("Invalid or expired reset token");
-    }
+    if (!resetToken) throw new Error("Invalid or expired reset token");
 
     const user = await User.findById(resetToken.userId);
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    if (!user) throw new Error("User not found");
 
     user.password = newPassword;
     await user.save();
-
-    // Revoke all refresh tokens for security
-    await RefreshToken.updateMany(
-      { userId: user._id, revoked: false },
-      { revoked: true },
-    );
+    await this.logoutAll(user._id);
   }
 
   async handleGoogleAuth(profile, deviceInfo = {}) {
-    console.log("🔄 Handling Google auth for:", profile.email);
-
     let user = await User.findOne({
       $or: [{ email: profile.email }, { googleId: profile.id }],
     });
 
     if (!user) {
-      console.log("📝 Creating new user from Google profile...");
-
-      // Generate unique username
-      let username = profile.email.split("@")[0];
+      const baseUsername =
+        profile.email
+          .split("@")[0]
+          .replace(/[^a-zA-Z0-9_]/g, "_")
+          .slice(0, 25) || "user";
+      let username = baseUsername;
       let counter = 1;
       while (await User.findOne({ username })) {
-        username = `${profile.email.split("@")[0]}${counter}`;
-        counter++;
+        username = `${baseUsername}${counter}`.slice(0, 30);
+        counter += 1;
       }
 
       user = await User.create({
         email: profile.email,
         googleId: profile.id,
-        username: username,
+        username,
         profile: {
           fullname: profile.displayName || profile.name?.givenName || "",
           avatar: profile.photos?.[0]?.value || "",
@@ -186,13 +132,12 @@ class AuthService {
         isEmailVerified: true,
         isActive: true,
       });
-      console.log("✅ New user created:", user._id);
     } else if (!user.googleId) {
-      console.log("📝 Linking Google account to existing user...");
       user.googleId = profile.id;
-      await user.save();
-      console.log("✅ Google account linked");
+      user.isEmailVerified = true;
     }
+
+    if (!user.isActive) throw new Error("Account is inactive");
 
     user.lastLogin = new Date();
     await user.save();
@@ -204,17 +149,10 @@ class AuthService {
       deviceInfo,
     );
 
-    console.log("✅ Google auth successful for:", user.email);
-
     return {
       accessToken,
       refreshToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        profile: user.profile,
-      },
+      user: tokenService.publicUser(user),
     };
   }
 }
