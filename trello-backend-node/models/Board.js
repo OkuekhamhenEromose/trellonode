@@ -36,12 +36,19 @@ const boardSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Auto-populate owner and members
-boardSchema.pre('find', function() {
-  this.populate('owner', 'username email profile.fullname')
-       .populate('members', 'username email profile.fullname');
+// Keep the board ownership invariant true at the model boundary:
+// the owner must always be a member, and membership IDs must be unique.
+// This protects the invariant even when a future code path bypasses the
+// controller-level membership preparation.
+boardSchema.pre('validate', function(next) {
+  const ownerId = this.owner?.toString()
+  const memberIds = Array.isArray(this.members) ? this.members.map((member) => member.toString()) : []
+  if(ownerId && !memberIds.includes(ownerId)) memberIds.unshift(ownerId);
+  this.members = [...new Set(memberIds)];
+  next()
 });
 
+// Auto-populate owner and members
 boardSchema.pre('findOne', function() {
   this.populate('owner', 'username email profile.fullname')
        .populate('members', 'username email profile.fullname');

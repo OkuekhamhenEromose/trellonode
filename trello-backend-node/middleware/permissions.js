@@ -1,63 +1,48 @@
-const Board = require('../models/Board');
-const List = require('../models/List');
+// HTTP middleware adapter for the centralized authorization service.
+//
+// Teaching goal: middleware should translate HTTP request data into authorization
+// calls; the actual permission policy belongs in authorizationService.js.
+const authorization = require('../services/authorizationService')
 
+// Convert authorization exceptions into a consistent API response shape.
+const handleAuthorizationError = (res, error) => res.status(error.status || 500).json({
+  error: error.message || 'Authorization check failed',
+  code: error.code || 'AUTHORIZATION_FAILED',
+});
+
+// The same middleware can support board IDs supplied by different route/body/query
+// shapes used by the existing application. More explicit resource middleware can be
+// added later as list/card routes are hardened.
+const resolveBoardId = (req) => req.params.boardId || req.params.id || req.body.board || req.body.boardId || req.query.board_id;
+
+// Require that the authenticated user belongs to the target board.
 const isBoardMember = async (req, res, next) => {
   try {
-    let boardId;
-    
-    // Extract boardId from different object types
-    if (req.body.board) {
-      boardId = req.body.board;
-    } else if (req.body.list) {
-      const list = await List.findById(req.body.list);
-      boardId = list?.board;
-    } else if (req.params.boardId) {
-      boardId = req.params.boardId;
-    } else if (req.query.board_id) {
-      boardId = req.query.board_id;
-    } else {
-      return res.status(400).json({ error: 'Board information required' });
-    }
-    
-    const board = await Board.findById(boardId);
-    if (!board) {
-      return res.status(404).json({ error: 'Board not found' });
-    }
-    
-    const isOwner = board.owner.toString() === req.user._id.toString();
-    const isMember = board.members.some(member => 
-      member._id.toString() === req.user._id.toString()
-    );
-    
-    if (!isOwner && !isMember) {
-      return res.status(403).json({ error: 'Access denied. Not a board member.' });
-    }
-    
-    req.board = board;
-    next();
-  } catch (error) {
-    res.status(500).json({ error: 'Permission check failed' });
-  }
+    const boardId = resolveBoardId(req);
+    if (!boardId) return res.status(400).json({ error: 'Board information required', code: 'BOARD_ID_REQUIRED' });
+    const membership = await authorization.requireBoardMember(boardId, req.user._id);
+    req.board = membership.board;
+    req.boardMembership = membership;
+    return next();
+  } catch (error) { return handleAuthorizationError(res, error); }
 };
 
+// Require the stronger owner role for board-level administrative operations.
 const isBoardOwner = async (req, res, next) => {
   try {
-    const boardId = req.params.boardId || req.body.boardId;
-    const board = await Board.findById(boardId);
-    
-    if (!board) {
-      return res.status(404).json({ error: 'Board not found' });
-    }
-    
-    if (board.owner.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'Access denied. Board owner only.' });
-    }
-    
-    req.board = board;
+    const boardId = resolveBoardId(req)
+
+    if (!boardId)
+      return res.status(404).json({ error: "Board information required", code: 'BOARD_ID_REQUIRED' });
+    const membership = await authorization.requireBoardOwner(boardId, req.user._id)
+    req.board = membership.board
+    req.boardMembership = membership
     next();
   } catch (error) {
-    res.status(500).json({ error: 'Permission check failed' });
+    return handleAuthorizationError(res, error)
   }
 };
 
-module.exports = { isBoardMember, isBoardOwner };
+// Keep the existing middleware names while also exposing the more descriptive
+// require* aliases. This preserves the current route contract during migration.
+module.exports = { isBoardMember, isBoardOwner, requireBoardMember: isBoardMember, requireBoardOwner: isBoardOwner };
