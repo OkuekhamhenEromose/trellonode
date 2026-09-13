@@ -16,13 +16,18 @@ const toIdString = (value) => {
 };
 
 // Ownership is stronger than ordinary membership.
-const isOwner = (userId, board) =>
+//
+// IMPORTANT:
+// The parameter order is (board, userId) because every authorization call in this
+// service supplies the board first and the authenticated user second.
+const isOwner = (board, userId) =>
   toIdString(board.owner) === toIdString(userId);
 
 // Membership is evaluated from server-side board data. Knowing a board ID alone
 // never makes a caller a member.
 const isMember = (board, userId) => {
   const id = toIdString(userId);
+
   return (
     Array.isArray(board.members) &&
     board.members.some((member) => toIdString(member) === id)
@@ -44,20 +49,27 @@ const assertObjectId = (id, resourceName = "resource") => {
 // from an existing board that denies the caller access, so these become 404 vs 403.
 const getBoard = async (boardId) => {
   assertObjectId(boardId, "board");
+
   const board = await Board.findById(boardId);
+
   if (!board) {
     const error = new Error("Board not found");
     error.status = 404;
     error.code = "BOARD_NOT_FOUND";
     throw error;
   }
+
   return board;
 };
 
+// Resolve the caller's relationship to a board once and return a small authorization
+// context that middleware/controllers can reuse.
 const getBoardMembership = async (boardId, userId) => {
   const board = await getBoard(boardId);
+
   const owner = isOwner(board, userId);
   const member = owner || isMember(board, userId);
+
   return {
     board,
     userId: toIdString(userId),
@@ -71,12 +83,14 @@ const getBoardMembership = async (boardId, userId) => {
 // implies membership for this application's authorization model.
 const requireBoardMember = async (boardId, userId) => {
   const membership = await getBoardMembership(boardId, userId);
+
   if (!membership.isMember) {
     const error = new Error("Board access denied");
     error.status = 403;
     error.code = "BOARD_ACCESS_DENIED";
     throw error;
   }
+
   return membership;
 };
 
@@ -84,12 +98,17 @@ const requireBoardMember = async (boardId, userId) => {
 // requireBoardMember so destructive/administrative actions can be explicit.
 const requireBoardOwner = async (boardId, userId) => {
   const membership = await getBoardMembership(boardId, userId);
-  if (!isMember.isOwner) {
+
+  // IMPORTANT:
+  // Check the authorization result returned by getBoardMembership().
+  // Do not check isMember.isOwner because isMember is a function.
+  if (!membership.isOwner) {
     const error = new Error("Board owner permission required");
     error.status = 403;
     error.code = "BOARD_OWNER_REQUIRED";
     throw error;
   }
+
   return membership;
 };
 
@@ -97,20 +116,27 @@ const requireBoardOwner = async (boardId, userId) => {
 // parent board and then apply the board membership rule.
 const getBoardIdForList = async (listId) => {
   assertObjectId(listId, "list");
+
   const list = await List.findById(listId).select("board");
+
   if (!list) {
     const error = new Error("List not found");
     error.status = 404;
     error.code = "LIST_NOT_FOUND";
     throw error;
   }
-  return { list, boardId: list.board };
+
+  return {
+    list,
+    boardId: list.board,
+  };
 };
 
 // Resource-level authorization follows the domain relationship:
 // List -> Board -> Membership.
 const requireListBoardMember = async (listId, userId) => {
   const resource = await getBoardIdForList(listId);
+
   return {
     ...resource,
     ...(await requireBoardMember(resource.boardId, userId)),
@@ -122,25 +148,44 @@ const requireListBoardMember = async (listId, userId) => {
 // existing project data model.
 const getBoardIdForCard = async (cardId) => {
   assertObjectId(cardId, "card");
+
   const card = await Card.findById(cardId).select("list board");
+
   if (!card) {
     const error = new Error("Card not found");
     error.status = 404;
     error.code = "CARD_NOT_FOUND";
     throw error;
   }
-  if (card.board) return { card, boardId: card.board };
+
+  if (card.board) {
+    return {
+      card,
+      boardId: card.board,
+    };
+  }
+
   const resource = await getBoardIdForList(card.list);
-  return { card, ...resource };
+
+  return {
+    card,
+    ...resource,
+  };
 };
 
 // Resource-level authorization follows the domain relationship:
 // Card -> Board (or Card -> List -> Board) -> Membership.
+//
+// IMPORTANT:
+// This is member-level access, not owner-only access.
+// A board member who is allowed to work with cards must not be rejected simply
+// because they are not the board owner.
 const requireCardBoardMember = async (cardId, userId) => {
   const resource = await getBoardIdForCard(cardId);
+
   return {
     ...resource,
-    ...(await requireBoardOwner(resource.boardId, userId)),
+    ...(await requireBoardMember(resource.boardId, userId)),
   };
 };
 
@@ -148,8 +193,11 @@ const requireCardBoardMember = async (cardId, userId) => {
 // They are useful when a board document has already been loaded.
 const canViewBoard = (board, userId) =>
   isOwner(board, userId) || isMember(board, userId);
+
 const canEditBoard = (board, userId) => isOwner(board, userId);
+
 const canDeleteBoard = (board, userId) => isOwner(board, userId);
+
 const canManageMembers = (board, userId) => isOwner(board, userId);
 
 // Export the complete Phase 9.1 authorization contract for middleware, controllers,
