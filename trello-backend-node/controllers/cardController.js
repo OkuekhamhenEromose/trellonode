@@ -2,30 +2,31 @@ const Card = require('../models/Card');
 const List = require('../models/List');
 const Board = require('../models/Board');
 const Activity = require('../models/Activity');
+const authorization = require('../services/authorizationService')
 
 // Get all cards (with optional list filter)
 exports.getCards = async (req, res) => {
   try {
     const { list_id } = req.query;
     let query = { archived: false };
-    
+
     if (list_id) {
       const list = await List.findById(list_id);
       if (!list) {
         return res.status(404).json({ error: 'List not found' });
       }
-      
+
       // Check board access
       const board = await Board.findById(list.board);
       const isOwner = board.owner.toString() === req.user._id.toString();
-      const isMember = board.members.some(member => 
+      const isMember = board.members.some(member =>
         member._id.toString() === req.user._id.toString()
       );
-      
+
       if (!isOwner && !isMember) {
         return res.status(403).json({ error: 'Access denied' });
       }
-      
+
       query.list = list_id;
     } else {
       // Get cards from all boards user is member of
@@ -36,11 +37,11 @@ exports.getCards = async (req, res) => {
         ],
         archived: false
       }).select('_id');
-      
+
       const lists = await List.find({ board: { $in: userBoards } }).select('_id');
       query.list = { $in: lists.map(l => l._id) };
     }
-    
+
     const cards = await Card.find(query)
       .sort('position')
       .populate('members', 'username email profile.fullname')
@@ -58,7 +59,7 @@ exports.getCards = async (req, res) => {
           path: 'items'
         }
       });
-    
+
     res.status(200).json(cards);
   } catch (error) {
     console.error('Get cards error:', error);
@@ -90,22 +91,22 @@ exports.getCard = async (req, res) => {
           path: 'items'
         }
       });
-    
+
     if (!card) {
       return res.status(404).json({ error: 'Card not found' });
     }
-    
+
     // Check board access
     const board = card.list.board;
     const isOwner = board.owner.toString() === req.user._id.toString();
-    const isMember = board.members.some(member => 
+    const isMember = board.members.some(member =>
       member._id.toString() === req.user._id.toString()
     );
-    
+
     if (!isOwner && !isMember) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    
+
     res.status(200).json(card);
   } catch (error) {
     console.error('Get card error:', error);
@@ -117,23 +118,23 @@ exports.getCard = async (req, res) => {
 exports.createCard = async (req, res) => {
   try {
     const { title, description, list, position, due_date, labels, member_ids, attachments } = req.body;
-    
+
     // Check list access
     const listDoc = await List.findById(list).populate('board');
     if (!listDoc) {
       return res.status(404).json({ error: 'List not found' });
     }
-    
+
     const board = listDoc.board;
     const isOwner = board.owner.toString() === req.user._id.toString();
-    const isMember = board.members.some(member => 
+    const isMember = board.members.some(member =>
       member._id.toString() === req.user._id.toString()
     );
-    
+
     if (!isOwner && !isMember) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    
+
     const card = await Card.create({
       title,
       description: description || '',
@@ -145,7 +146,7 @@ exports.createCard = async (req, res) => {
       attachments: attachments || [],
       archived: false
     });
-    
+
     // Create activity
     await Activity.create({
       board: board._id,
@@ -153,15 +154,15 @@ exports.createCard = async (req, res) => {
       activity_type: 'CREATE',
       description: `${req.user.username} created card "${card.title}"`
     });
-    
+
     // Emit socket event
     const io = req.app.get('io');
     io.to(`board:${board._id}`).emit('card_created', card);
-    
+
     const populatedCard = await Card.findById(card._id)
       .populate('members', 'username email profile.fullname')
       .populate('list');
-    
+
     res.status(201).json(populatedCard);
   } catch (error) {
     console.error('Create card error:', error);
@@ -178,22 +179,22 @@ exports.updateCard = async (req, res) => {
         path: 'board'
       }
     });
-    
+
     if (!card) {
       return res.status(404).json({ error: 'Card not found' });
     }
-    
+
     // Check board access
     const board = card.list.board;
     const isOwner = board.owner.toString() === req.user._id.toString();
-    const isMember = board.members.some(member => 
+    const isMember = board.members.some(member =>
       member._id.toString() === req.user._id.toString()
     );
-    
+
     if (!isOwner && !isMember) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    
+
     const updates = {};
     if (req.body.title !== undefined) updates.title = req.body.title;
     if (req.body.description !== undefined) updates.description = req.body.description;
@@ -203,7 +204,7 @@ exports.updateCard = async (req, res) => {
     if (req.body.member_ids !== undefined) updates.members = req.body.member_ids;
     if (req.body.attachments !== undefined) updates.attachments = req.body.attachments;
     if (req.body.archived !== undefined) updates.archived = req.body.archived;
-    
+
     const updatedCard = await Card.findByIdAndUpdate(
       req.params.id,
       updates,
@@ -216,7 +217,7 @@ exports.updateCard = async (req, res) => {
         path: 'board'
       }
     });
-    
+
     // Create activity
     await Activity.create({
       board: board._id,
@@ -224,11 +225,11 @@ exports.updateCard = async (req, res) => {
       activity_type: 'UPDATE',
       description: `${req.user.username} updated card "${card.title}"`
     });
-    
+
     // Emit socket event
     const io = req.app.get('io');
     io.to(`board:${board._id}`).emit('card_updated', updatedCard);
-    
+
     res.status(200).json(updatedCard);
   } catch (error) {
     console.error('Update card error:', error);
@@ -240,70 +241,65 @@ exports.updateCard = async (req, res) => {
 exports.moveCard = async (req, res) => {
   try {
     const card = await Card.findById(req.params.id);
-    
+
     if (!card) {
       return res.status(404).json({ error: 'Card not found' });
     }
-    
-    const { destination_list_id, position, source_list_id } = req.body;
-    
+
+    const { destination_list_id, position } = req.body;
+
     let oldList, newList;
-    
+
     if (destination_list_id) {
       // Move to different list
-      newList = await List.findById(destination_list_id).populate('board');
-      oldList = await List.findById(card.list).populate('board');
-      
+      newList = await List.findById(destination_list_id).populate("board");
+      oldList = await List.findById(card.list).populate("board");
+
       if (!newList || !oldList) {
-        return res.status(404).json({ error: 'List not found' });
+        return res.status(404).json({ error: "List not found" });
       }
-      
-      // Check access to both boards
+
+      // The route middleware already authorizes access to the card's current board.
+      // A cross-list move has a second authorization boundary: the destination list's
+      // parent board must also be accessible to the same authenticated user.
       const oldBoard = oldList.board;
       const newBoard = newList.board;
-      
-      const hasOldAccess = oldBoard.owner.toString() === req.user._id.toString() || 
-                         oldBoard.members.some(m => m._id.toString() === req.user._id.toString());
-      
-      const hasNewAccess = newBoard.owner.toString() === req.user._id.toString() || 
-                         newBoard.members.some(m => m._id.toString() === req.user._id.toString());
-      
-      if (!hasOldAccess || !hasNewAccess) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
-      
+      await authorization.requireListBoardMember(
+        destination_list_id,
+        req.user._id,
+      );
+
       card.list = destination_list_id;
       card.position = position || 0;
       await card.save();
-      
+
       // Create activity
       await Activity.create({
         board: newBoard._id,
         user: req.user._id,
-        activity_type: 'MOVE',
-        description: `${req.user.username} moved card "${card.title}" from "${oldList.title}" to "${newList.title}"`
+        activity_type: "MOVE",
+        description: `${req.user.username} moved card "${card.title}" from "${oldList.title}" to "${newList.title}"`,
       });
-      
+
       // Emit socket events to both boards
-      const io = req.app.get('io');
-      io.to(`board:${oldBoard._id}`).emit('card_moved', {
+      const io = req.app.get("io");
+      io.to(`board:${oldBoard._id}`).emit("card_moved", {
         cardId: card._id,
         fromList: oldList._id,
-        toList: newList._id
+        toList: newList._id,
       });
-      io.to(`board:${newBoard._id}`).emit('card_moved', {
+      io.to(`board:${newBoard._id}`).emit("card_moved", {
         cardId: card._id,
         fromList: oldList._id,
-        toList: newList._id
+        toList: newList._id,
       });
-      
     } else {
       // Reorder within same list
       card.position = position || 0;
       await card.save();
-      
+
       const list = await List.findById(card.list).populate('board');
-      
+
       // Create activity
       await Activity.create({
         board: list.board._id,
@@ -311,7 +307,7 @@ exports.moveCard = async (req, res) => {
         activity_type: 'MOVE',
         description: `${req.user.username} reordered card "${card.title}"`
       });
-      
+
       // Emit socket event
       const io = req.app.get('io');
       io.to(`board:${list.board._id}`).emit('card_reordered', {
@@ -320,11 +316,11 @@ exports.moveCard = async (req, res) => {
         position
       });
     }
-    
+
     const updatedCard = await Card.findById(card._id)
       .populate('members', 'username email profile.fullname')
       .populate('list');
-    
+
     res.status(200).json(updatedCard);
   } catch (error) {
     console.error('Move card error:', error);

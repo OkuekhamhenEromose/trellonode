@@ -83,6 +83,30 @@ const isListBoardOwner = async (req, res, next) => {
   }
 }
 
+// Require access to a card through its parent board. The authorization service resolves
+// Card -> Board (or Card -> List -> Board) server-side, so a caller cannot substitute
+// an unrelated board ID to bypass the card's actual authorization boundary.
+const isCardBoardMember = async (req, res, next) => {
+  try {
+    const cardId = req.params.id || req.params.cardId;
+    if (!cardId)
+      return res
+        .status(400)
+        .json({ error: "Card information required", code: "CARD_ID_REQUIRED" });
+    const authorizationContext = await authorization.requireCardBoardMember(
+      cardId,
+      req.user._id,
+    );
+    req.card = authorizationContext.card;
+    req.board = authorizationContext.board;
+    req.boardMembership = authorizationContext;
+    req.cardAuthorization = authorizationContext;
+    return next();
+  } catch (error) {
+    return handleAuthorizationError(res, error);
+  }
+}
+
 // Keep the existing middleware names while also exposing the more descriptive
 // require* aliases. This preserves the current route contract during migration.
 module.exports = {
@@ -94,4 +118,5 @@ module.exports = {
   requireBoardOwner: isBoardOwner,
   requireListBoardMember: isListBoardMember,
   requireListBoardOwner: isListBoardOwner,
+  requireCardBoardMember: isCardBoardMember,
 };

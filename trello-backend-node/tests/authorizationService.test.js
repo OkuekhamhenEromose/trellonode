@@ -5,7 +5,6 @@ jest.mock("../models/Board", () => ({ findById: jest.fn() }));
 jest.mock("../models/List", () => ({ findById: jest.fn() }));
 jest.mock("../models/Card", () => ({ findById: jest.fn() }));
 const Board = require("../models/Board");
-const List = require("../models/List");
 const authorization = require("../services/authorizationService");
 
 describe("authorizationService", () => {
@@ -148,5 +147,117 @@ describe("list authorization", () => {
       code: "LIST_NOT_FOUND",
     });
     expect(Board.findById).not.toHaveBeenCalled();
+  });
+});
+
+describe("card authorization", () => {
+  const cardId = new mongoose.Types.ObjectId();
+  const cardBoardId = new mongoose.Types.ObjectId();
+  const cardListId = new mongoose.Types.ObjectId();
+  const cardOwnerId = new mongoose.Types.ObjectId();
+  const cardMemberId = new mongoose.Types.ObjectId();
+  const cardOutsiderId = new mongoose.Types.ObjectId();
+
+  const makeCard = () => ({
+    _id: cardId,
+    board: cardBoardId,
+    list: cardListId,
+  });
+
+  const makeCardBoard = () => ({
+    _id: cardBoardId,
+    owner: cardOwnerId,
+    members: [cardOwnerId, cardMemberId],
+  });
+
+  const mockCardLookup = (card = makeCard()) => {
+    Card.findById.mockReturnValue({
+      select: jest.fn().mockResolvedValue(card),
+    });
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  // Ordinary board members can work with cards that belong to their board.
+  test("board member can access a card through its parent board", async () => {
+    mockCardLookup();
+    Board.findById.mockResolvedValue(makeCardBoard());
+
+    await expect(
+      authorization.requireCardBoardMember(cardId, cardMemberId),
+    ).resolves.toMatchObject({
+      card: { _id: cardId },
+      boardId: cardBoardId,
+      isMember: true,
+      isOwner: false,
+    });
+  });
+
+  // Knowing a card ID does not grant access to the board that owns the card.
+  test("outsider cannot access a card even when the card ID is known", async () => {
+    mockCardLookup();
+    Board.findById.mockResolvedValue(makeCardBoard());
+
+    await expect(
+      authorization.requireCardBoardMember(cardId, cardOutsiderId),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: "BOARD_ACCESS_DENIED",
+    });
+  });
+
+  // Ownership is still represented by the parent board, not by the card itself.
+  test("board owner passes card authorization", async () => {
+    mockCardLookup();
+    Board.findById.mockResolvedValue(makeCardBoard());
+
+    await expect(
+      authorization.requireCardBoardMember(cardId, cardOwnerId),
+    ).resolves.toMatchObject({
+      card: { _id: cardId },
+      boardId: cardBoardId,
+      isMember: true,
+      isOwner: true,
+    });
+  });
+
+  // A missing card is reported before any board authorization is attempted.
+  test("missing card is reported before board authorization", async () => {
+    Card.findById.mockReturnValue({
+      select: jest.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      authorization.requireCardBoardMember(cardId, cardMemberId),
+    ).rejects.toMatchObject({
+      status: 404,
+      code: "CARD_NOT_FOUND",
+    });
+    expect(Board.findById).not.toHaveBeenCalled();
+  });
+
+  // Compatibility rule: older cards without a direct board reference can still be
+  // authorized through Card -> List -> Board using the existing Phase 9 contract.
+  test("card authorization falls back through its parent list when board is absent", async () => {
+    mockCardLookup({
+      _id: cardId,
+      board: null,
+      list: cardListId,
+    });
+    List.findById.mockReturnValue({
+      select: jest.fn().mockResolvedValue({
+        _id: cardListId,
+        board: cardBoardId,
+      }),
+    });
+    Board.findById.mockResolvedValue(makeCardBoard());
+
+    await expect(
+      authorization.requireCardBoardMember(cardId, cardMemberId),
+    ).resolves.toMatchObject({
+      card: { _id: cardId },
+      boardId: cardBoardId,
+      isMember: true,
+    });
   });
 });
