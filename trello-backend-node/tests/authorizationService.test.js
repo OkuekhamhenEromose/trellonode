@@ -5,6 +5,7 @@ jest.mock("../models/Board", () => ({ findById: jest.fn() }));
 jest.mock("../models/List", () => ({ findById: jest.fn() }));
 jest.mock("../models/Card", () => ({ findById: jest.fn() }));
 const Board = require("../models/Board");
+const List = require("../models/List");
 const authorization = require("../services/authorizationService");
 
 describe("authorizationService", () => {
