@@ -143,6 +143,14 @@ const requireListBoardMember = async (listId, userId) => {
   };
 };
 
+// List deletion is an owner-only operation in the current MVP policy. This helper
+// keeps that rule attached to the same List -> Board authorization chain instead of
+// making controllers compare ObjectIds themselves.
+const requireListBoardOwner = async (listId, userId) => {
+  const resource = await getBoardIdForList(listId);
+  return {...resource, ...(await requireBoardOwner(resource.boardId, userId))}
+}
+
 // Cards can carry a direct board reference, but this exact Phase 9 implementation
 // retains a fallback through Card -> List -> Board for compatibility with the
 // existing project data model.

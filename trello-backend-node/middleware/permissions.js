@@ -43,6 +43,38 @@ const isBoardOwner = async (req, res, next) => {
   }
 };
 
+// Require access to a list through its parent board. The caller supplies only the
+// list ID; the authorization service resolves the owning board server-side, which
+// prevents an IDOR-style request from selecting an unrelated board ID.
+// phase 9.2
+const isListBoardMember = async (req, res, next) =>{
+  try{
+    const listId = req.params.id || req.params.listId
+    if (!listId) return res.status(400).json({error: 'List information required', code: 'LIST_ID_REQUIRED'});
+    const authorizationContext = await authorization.requireListBoardMember(listId, req.user._id)
+    req.list = authorizationContext.list
+    req.board = authorizationContext.board
+    req.boardMembership = authorizationContext
+    req.listAuthorization = authorizationContext
+    return next()
+  }catch(error){return handleAuthorizationError(res, error)}
+}
+
+// Require owner access to a list through its parent board. This is used for list
+// deletion because ownership belongs to the board, not to the list itself.
+const isListBoardOwner = async (req, res, next) => {
+  try{
+    const listId = req.params.id || req.params.listId
+    if (!listId) return res.status(400).json({ error: 'List information required', code: 'LIST_ID_REQUIRED'});
+    const authorizationContext = await authorization.requireListBoardOwner(listId, req.user._id)
+    req.list = authorizationContext.list
+    req.board = authorizationContext.board
+    
+  }catch(error){
+
+  }
+}
+
 // Keep the existing middleware names while also exposing the more descriptive
 // require* aliases. This preserves the current route contract during migration.
 module.exports = { isBoardMember, isBoardOwner, requireBoardMember: isBoardMember, requireBoardOwner: isBoardOwner };
