@@ -220,6 +220,7 @@ module.exports = {
   requireBoardMember,
   requireBoardOwner,
   requireListBoardMember,
+  requireListBoardOwner,
   requireCardBoardMember,
   canViewBoard,
   canEditBoard,
