@@ -1,10 +1,15 @@
 // These tests exercise the authorization service in isolation. MongoDB itself is mocked,
 // so failures here point to authorization logic rather than database connectivity.
 const mongoose = require("mongoose");
+
 jest.mock("../models/Board", () => ({ findById: jest.fn() }));
 jest.mock("../models/List", () => ({ findById: jest.fn() }));
 jest.mock("../models/Card", () => ({ findById: jest.fn() }));
+
 const Board = require("../models/Board");
+const List = require("../models/List");
+const Card = require("../models/Card");
+
 const authorization = require("../services/authorizationService");
 
 describe("authorizationService", () => {
