@@ -114,7 +114,6 @@ module.exports = {
   isBoardOwner,
   isListBoardMember,
   isListBoardOwner,
-  isCardBoardMember,
   requireBoardMember: isBoardMember,
   requireBoardOwner: isBoardOwner,
   requireListBoardMember: isListBoardMember,
