@@ -11,9 +11,8 @@ const app = require('./app');
 const connectDB = require('./config/database');
 const { disconnectDB } = require('./config/database');
 const User = require('./models/User');
-const Board = require('./models/Board');
 const config = require('./config/env');
-const { secret: jwtSecret } = require('./config/jwt');
+const { authenticateSocket, authorizeBoardJoin } = require('./services/socketAuthorizationService');
 
 const server = http.createServer(app);
 
@@ -33,42 +32,22 @@ const io = new Server(server, {
 app.set('io', io);
 app.set('realtimeReady', true);
 
-io.use(async (socket, next) => {
-  try {
-    const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error('Authentication required'));
-
-    const decoded = jwt.verify(token, jwtSecret);
-    if (!decoded?.userId) return next(new Error('Invalid authentication token'));
-
-    const user = await User.findById(decoded.userId);
-    if (!user) return next(new Error('Authenticated user not found'));
-
-    socket.user = user;
-    next();
-  } catch (error) {
-    next(new Error(error.name === 'TokenExpiredError' ? 'Token expired' : 'Authentication failed'));
-  }
-});
+io.use(authenticateSocket);
 
 io.on('connection', (socket) => {
   socket.on('joinBoard', async (boardId, acknowledge) => {
     try {
-      if (!mongoose.isValidObjectId(boardId)) {
-        throw new Error('Invalid board ID');
-      }
+      await authorizeBoardJoin(socket, boardId);
 
-      const board = await Board.findOne({
-        _id: boardId,
-        $or: [{ owner: socket.user._id }, { members: socket.user._id }],
-      }).select('_id');
-
-      if (!board) throw new Error('Board access denied');
-
-      await socket.join(`board:${board._id}`);
       if (typeof acknowledge === 'function') acknowledge({ ok: true });
     } catch (error) {
-      if (typeof acknowledge === 'function') acknowledge({ ok: false, error: error.message });
+      if (typeof acknowledge === 'function') {
+        acknowledge({
+          ok: false,
+          error: error.message,
+          code: error.code || 'BOARD_ACCESS_DENIED',
+        });
+      }
     }
   });
 
